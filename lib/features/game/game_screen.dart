@@ -9,6 +9,7 @@ import 'package:okey101/core/tile_glyphs.dart';
 import 'package:okey101/core/wake_lock.dart';
 import 'package:okey101/data/models/app_settings.dart';
 import 'package:okey101/domain/models/game_state.dart';
+import 'package:okey101/domain/models/meld.dart';
 import 'package:okey101/domain/models/tile.dart';
 import 'package:okey101/features/game/game_controller.dart';
 import 'package:okey101/features/game/game_session.dart';
@@ -126,16 +127,21 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   void _handleMeldTap(int meldId) {
     final session = ref.read(gameControllerProvider);
     if (session == null || !session.isHumanTurn) return;
-    final controller = ref.read(gameControllerProvider.notifier);
     if (session.selection.length == 1) {
-      controller
-        ..addToMeld(meldId, session.selection.single)
-        ..clearSelection();
+      // "Islemek": work the selected tile onto this meld, at whichever end it
+      // actually fits.
+      ref
+          .read(gameControllerProvider.notifier)
+          .workTileOntoMeld(meldId, session.selection.single);
       return;
     }
     setState(() => _focusedMeldId = _focusedMeldId == meldId ? null : meldId);
   }
 
+  /// A tap lands on one tile of a meld, never on the meld's background: every
+  /// tile paints itself and absorbs the hit. So the tapped POSITION decides
+  /// what the tap means - a wild standing on the table is a swap, anything else
+  /// is working a tile onto that meld.
   void _handleMeldTileTap(int meldId, int index) {
     final session = ref.read(gameControllerProvider);
     if (session == null || !session.isHumanTurn) return;
@@ -143,9 +149,19 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       _handleMeldTap(meldId);
       return;
     }
-    ref.read(gameControllerProvider.notifier)
-      ..replaceJoker(meldId, index, session.selection.single)
-      ..clearSelection();
+    final meld =
+        session.state.table.where((m) => m.id == meldId).firstOrNull;
+    final tappedIsWild = meld != null &&
+        index >= 0 &&
+        index < meld.jokerAssignments.length &&
+        meld.jokerAssignments[index] != null;
+    if (!tappedIsWild) {
+      _handleMeldTap(meldId);
+      return;
+    }
+    ref
+        .read(gameControllerProvider.notifier)
+        .replaceJoker(meldId, index, session.selection.single);
   }
 
   Future<void> _showSortMenu() async {
@@ -338,12 +354,30 @@ class _Board extends ConsumerWidget {
           onDrawDiscard: controller.drawFromDiscard,
         ),
         Expanded(
-          child: _TableArea(
-            session: session,
-            colorblind: settings.colorblind,
-            focusedMeldId: focusedMeldId,
-            onTapMeld: onTapMeld,
-            onTapMeldTile: onTapMeldTile,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: _TableArea(
+                  session: session,
+                  colorblind: settings.colorblind,
+                  focusedMeldId: focusedMeldId,
+                  onTapMeld: onTapMeld,
+                  onTapMeldTile: onTapMeldTile,
+                ),
+              ),
+              // Pairs live on their own panel here too. Without it a pairs
+              // player's five to eleven pairs would be laid and then shown
+              // nowhere, because the main grid deliberately skips them.
+              if (session.state.table.any((m) => m.kind == MeldKind.pair))
+                SizedBox(
+                  width: pairsPanelWidth,
+                  child: _PairsPanel(
+                    session: session,
+                    colorblind: settings.colorblind,
+                  ),
+                ),
+            ],
           ),
         ),
         _HudBar(session: session),

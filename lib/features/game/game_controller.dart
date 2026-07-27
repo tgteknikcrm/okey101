@@ -171,23 +171,30 @@ class GameController extends Notifier<GameSession?> {
       return;
     }
 
+    // Repeat until a pass places nothing. One pass would be order dependent:
+    // with 5-6-7 on the table, selecting 9 before 8 would place 8 and strand 9,
+    // because 9 only becomes legal once 8 is down.
     var applied = 0;
-    for (final tileId in session.selection.toList()) {
-      final current = state;
-      if (current == null) break;
-      final options = BotUtils.tableAdditions(_humanView(current))
-          .where((option) => option.tileId == tileId)
-          .toList();
-      if (options.isEmpty) continue;
-      final pick = options.first;
-      _applyHuman(
-        GameAction.addToMeld(
-          meldId: pick.meldId,
-          tileId: pick.tileId,
-          atStart: pick.atStart,
-        ),
-      );
-      applied++;
+    final pending = session.selection.toList();
+    var progress = true;
+    while (progress && pending.isNotEmpty) {
+      progress = false;
+      for (final tileId in List<int>.of(pending)) {
+        final current = state;
+        if (current == null) break;
+        final option = _bestAddition(current, tileId);
+        if (option == null) continue;
+        _applyHuman(
+          GameAction.addToMeld(
+            meldId: option.meldId,
+            tileId: option.tileId,
+            atStart: option.atStart,
+          ),
+        );
+        pending.remove(tileId);
+        applied++;
+        progress = true;
+      }
     }
 
     if (applied == 0) {
@@ -205,12 +212,99 @@ class GameController extends Notifier<GameSession?> {
     clearSelection();
   }
 
+  /// Where a tile should go when several melds would legally take it.
+  ///
+  /// [BotUtils.tableAdditions] returns options in table order with no
+  /// preference, so picking the first would drop the okey onto whichever meld
+  /// happened to be laid earliest - usually an opponent's, and only
+  /// recoverable through a joker swap. Ordinary tiles go first, and this
+  /// player's own melds before anybody else's.
+  ({int meldId, int tileId, bool atStart})? _bestAddition(
+    GameSession session,
+    int tileId,
+  ) {
+    final view = _humanView(session);
+    final semantics = BotUtils.semanticsOf(view);
+    final tile = view.hand.where((t) => t.id == tileId).firstOrNull;
+    if (tile == null) return null;
+    final wild = semantics.isWild(tile);
+
+    final options = BotUtils.tableAdditions(view)
+        .where((option) => option.tileId == tileId)
+        .toList();
+    if (options.isEmpty) return null;
+    if (wild) {
+      // A wild is worth far more in hand than worked onto a table meld, but the
+      // player asked for it; at least keep it on their own meld if possible.
+      options.sort((a, b) {
+        final aMine = _ownsMeld(view, a.meldId) ? 0 : 1;
+        final bMine = _ownsMeld(view, b.meldId) ? 0 : 1;
+        return aMine.compareTo(bMine);
+      });
+    } else {
+      options.sort((a, b) {
+        final aMine = _ownsMeld(view, a.meldId) ? 0 : 1;
+        final bMine = _ownsMeld(view, b.meldId) ? 0 : 1;
+        return aMine.compareTo(bMine);
+      });
+    }
+    return options.first;
+  }
+
+  bool _ownsMeld(PlayerView view, int meldId) {
+    for (final meld in view.table) {
+      if (meld.id == meldId) return meld.ownerSeat == view.seat;
+    }
+    return false;
+  }
+
+  /// Works one specific tile onto one specific meld, used when the player taps
+  /// a meld on the board rather than pressing the button.
+  void workTileOntoMeld(int meldId, int tileId) {
+    final session = state;
+    if (session == null) return;
+    final option = _bestAddition(session, tileId);
+    if (option == null || option.meldId != meldId) {
+      // Find the option for the meld they actually tapped.
+      final exact = BotUtils.tableAdditions(_humanView(session))
+          .where((o) => o.tileId == tileId && o.meldId == meldId)
+          .toList();
+      if (exact.isEmpty) {
+        state = session.copyWith(
+          lastError:
+              GameError.tileDoesNotExtendMeld(meldId: meldId, tileId: tileId),
+        );
+        return;
+      }
+      _applyHuman(
+        GameAction.addToMeld(
+          meldId: meldId,
+          tileId: tileId,
+          atStart: exact.first.atStart,
+        ),
+      );
+      clearSelection();
+      return;
+    }
+    _applyHuman(
+      GameAction.addToMeld(
+        meldId: meldId,
+        tileId: tileId,
+        atStart: option.atStart,
+      ),
+    );
+    clearSelection();
+  }
+
   /// Melds the current selection could legally be worked onto, so the board can
   /// point them out before the player commits.
   Set<int> addableMeldIds() {
     final session = state;
     if (session == null || session.selection.isEmpty) return const <int>{};
     if (!session.isHumanTurn) return const <int>{};
+    // Before drawing, nothing may be worked onto the table; highlighting melds
+    // then would invite a tap the engine is going to refuse.
+    if (session.state.phase != TurnPhase.awaitingDiscard) return const <int>{};
     if (!session.human.hasOpened || session.human.openedWithPairs) {
       return const <int>{};
     }

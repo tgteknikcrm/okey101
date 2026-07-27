@@ -146,39 +146,49 @@ class MeldBoard extends StatelessWidget {
         final halfWidth = cell.width * BoardLayout.columnsPerHalf;
         final boardWidth = halfWidth * halves + _halfGap * (halves - 1);
 
-        return SingleChildScrollView(
-          child: Center(
-            child: SizedBox(
-              width: boardWidth,
-              height: rows * rowPitch,
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: CustomPaint(
-                      painter: _GridPainter(
-                        cell: cell,
-                        rowPitch: rowPitch,
-                        rows: rows,
-                        halves: halves,
-                        halfGap: _halfGap,
-                      ),
-                    ),
+        final grid = SizedBox(
+          width: boardWidth,
+          height: rows * rowPitch,
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: CustomPaint(
+                  painter: _GridPainter(
+                    cell: cell,
+                    rowPitch: rowPitch,
+                    rows: rows,
+                    halves: halves,
+                    halfGap: _halfGap,
                   ),
-                  if (placements.isEmpty && emptyHint != null)
-                    Positioned.fill(child: Center(child: emptyHint)),
-                  for (final placement in placements)
-                    if (byId[placement.meldId] != null)
-                      _positioned(
-                        byId[placement.meldId]!,
-                        placement,
-                        cell,
-                        rowPitch,
-                        halfWidth,
-                      ),
-                ],
+                ),
               ),
-            ),
+              if (placements.isEmpty && emptyHint != null)
+                Positioned.fill(child: Center(child: emptyHint)),
+              for (final placement in placements)
+                if (byId[placement.meldId] != null)
+                  _positioned(
+                    byId[placement.meldId]!,
+                    placement,
+                    cell,
+                    rowPitch,
+                    halfWidth,
+                  ),
+            ],
           ),
+        );
+
+        // Below the readable minimum the cell stops shrinking, so on a very
+        // small viewport the board can be wider than the space it was given.
+        // Scroll it sideways rather than clipping columns away silently.
+        final overflows = boardWidth > constraints.maxWidth + 0.5;
+
+        return SingleChildScrollView(
+          child: overflows
+              ? SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: grid,
+                )
+              : Center(child: grid),
         );
       },
     );
@@ -317,13 +327,6 @@ class PairsBoard extends StatelessWidget {
 
         final placements = BoardLayout.placePairs(pairs);
         final rowsUsed = BoardLayout.rowsUsed(placements);
-        final rowsThatFit = (constraints.maxHeight / rowPitch).floor();
-        final rows = [
-          _minRows,
-          rowsUsed,
-          rowsThatFit,
-        ].reduce((a, b) => a > b ? a : b);
-
         final byId = <int, Meld>{for (final meld in pairs) meld.id: meld};
         final width = cell.width * BoardLayout.pairColumns;
 
@@ -342,56 +345,68 @@ class PairsBoard extends StatelessWidget {
                   ),
                 ),
               ),
+            // A second LayoutBuilder inside the Expanded: the outer one
+            // measures the whole panel including the label above, so sizing the
+            // grid from it would overshoot by the label's height.
             Expanded(
-              child: SingleChildScrollView(
-                child: SizedBox(
-                  width: width,
-                  height: rows * rowPitch,
-                  child: Stack(
-                    children: [
-                      Positioned.fill(
-                        child: CustomPaint(
-                          painter: _GridPainter(
-                            cell: cell,
-                            rowPitch: rowPitch,
-                            rows: rows,
-                            halves: 1,
-                          ),
-                        ),
-                      ),
-                      for (final placement in placements)
-                        if (byId[placement.meldId] != null)
-                          Positioned(
-                            left: placement.column * cell.width,
-                            top: placement.row * rowPitch,
-                            width: cell.width * 2,
-                            height: cell.height,
-                            child: Row(
-                              children: [
-                                for (final tile
-                                    in byId[placement.meldId]!.tiles)
-                                  Padding(
-                                    padding: const EdgeInsets.all(0.5),
-                                    child: TileWidget(
-                                      width: cell.width - 1,
-                                      tile: tile,
-                                      kind: tile.isFalseJoker
-                                          ? TileFaceKind.falseJoker
-                                          : _isOkey(tile)
-                                              ? TileFaceKind.okey
-                                              : TileFaceKind.normal,
-                                      colorblindGlyph:
-                                          colorblind && tile.color != null
-                                              ? glyphFor?.call(tile.color!)
-                                              : null,
-                                    ),
-                                  ),
-                              ],
+              child: LayoutBuilder(
+                builder: (context, gridConstraints) {
+                  final gridRows = [
+                    _minRows,
+                    rowsUsed,
+                    (gridConstraints.maxHeight / rowPitch).floor(),
+                  ].reduce((a, b) => a > b ? a : b);
+                  return SingleChildScrollView(
+                    child: SizedBox(
+                      width: width,
+                      height: gridRows * rowPitch,
+                      child: Stack(
+                        children: [
+                          Positioned.fill(
+                            child: CustomPaint(
+                              painter: _GridPainter(
+                                cell: cell,
+                                rowPitch: rowPitch,
+                                rows: gridRows,
+                                halves: 1,
+                              ),
                             ),
                           ),
-                    ],
-                  ),
-                ),
+                          for (final placement in placements)
+                            if (byId[placement.meldId] != null)
+                              Positioned(
+                                left: placement.column * cell.width,
+                                top: placement.row * rowPitch,
+                                width: cell.width * 2,
+                                height: cell.height,
+                                child: Row(
+                                  children: [
+                                    for (final tile
+                                        in byId[placement.meldId]!.tiles)
+                                      Padding(
+                                        padding: const EdgeInsets.all(0.5),
+                                        child: TileWidget(
+                                          width: cell.width - 1,
+                                          tile: tile,
+                                          kind: tile.isFalseJoker
+                                              ? TileFaceKind.falseJoker
+                                              : _isOkey(tile)
+                                                  ? TileFaceKind.okey
+                                                  : TileFaceKind.normal,
+                                          colorblindGlyph:
+                                              colorblind && tile.color != null
+                                                  ? glyphFor?.call(tile.color!)
+                                                  : null,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
           ],

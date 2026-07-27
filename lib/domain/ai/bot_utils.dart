@@ -182,7 +182,10 @@ abstract final class BotUtils {
     return pairs;
   }
 
-  /// Every legal way to work a hand tile onto a table meld, cheapest first.
+  /// Every legal way to work a hand tile onto a table meld.
+  ///
+  /// Returned in table order then hand order, with no preference expressed:
+  /// callers that care which option is best must sort for themselves.
   static List<({int meldId, int tileId, bool atStart})> tableAdditions(
     PlayerView view,
   ) {

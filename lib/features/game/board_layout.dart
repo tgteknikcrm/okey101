@@ -60,9 +60,10 @@ abstract final class BoardLayout {
       if (length <= 0) continue;
 
       var placed = false;
-      // Fill row by row across every half before opening a new row, so the
-      // board grows downwards evenly rather than filling one side first.
-      final deepest = cursors.fold<int>(0, (m, c) => c.length > m ? c.length : m);
+      // First fit, scanning rows top to bottom and halves left to right, so a
+      // meld drops into the first gap that takes it.
+      final deepest =
+          cursors.fold<int>(0, (m, c) => c.length > m ? c.length : m);
       for (var row = 0; row <= deepest && !placed; row++) {
         for (var half = 0; half < halves && !placed; half++) {
           if (row >= cursors[half].length) {
@@ -85,23 +86,33 @@ abstract final class BoardLayout {
       }
 
       if (!placed) {
-        // Every existing row is full: start a fresh one.
-        final row = cursors[0].length;
+        // Every existing row is full, so open a fresh one. The failed scan
+        // above created row `deepest` in every half, so the next free row is
+        // `deepest` itself when it is still empty and `deepest + 1` otherwise -
+        // taking cursors[0].length here would leave a blank row behind.
+        final row = cursors[0].isEmpty
+            ? 0
+            : (cursors[0].last == 0 ? cursors[0].length - 1 : cursors[0].length);
         for (final cursor in cursors) {
           while (cursor.length <= row) {
             cursor.add(0);
           }
         }
+        // A meld longer than a half cannot be drawn without covering the
+        // divider, so it is clamped rather than allowed to overlap its
+        // neighbour. Only reachable if a table run is extended past 13, which
+        // needs allowCircularRuns.
+        final drawn = length > columnsPerHalf ? columnsPerHalf : length;
         placements.add(
           BoardPlacement(
             meldId: meld.id,
             half: 0,
             row: row,
             column: 0,
-            length: length,
+            length: drawn,
           ),
         );
-        cursors[0][row] = length + gapCells;
+        cursors[0][row] = drawn + gapCells;
       }
     }
     return placements;

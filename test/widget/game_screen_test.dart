@@ -409,6 +409,202 @@ void main() {
     expect(find.text('Bu taş o ele işlenemez.'), findsOneWidget);
   });
 
+  testWidgets('tapping a meld works the selected tile onto it', (tester) async {
+    // Every tile of a meld paints itself and absorbs the tap, so the tap lands
+    // on a tile, not on the meld background. A non-wild position used to be
+    // routed to joker replacement, which always failed.
+    tester.view.physicalSize = const Size(844, 390);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final blueRun = Meld(
+      id: 1,
+      kind: MeldKind.run,
+      ownerSeat: 0,
+      tiles: [blue(4), blue(5), blue(6)],
+      jokerAssignments: const [null, null, null],
+    );
+    final state = buildState(
+      indicator: indicator,
+      hands: buildHands(
+        indicator: indicator,
+        okey: okeyIdentity,
+        cores: [
+          [blue(7)],
+          const <Tile>[],
+          const <Tile>[],
+          const <Tile>[],
+        ],
+        sizes: const [22, 21, 21, 21],
+        reserved: [blue(4), blue(5), blue(6)],
+      ),
+      table: [blueRun],
+      opened: const [true, false, false, false],
+    );
+    await pumpGame(tester, state);
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(GameScreen)),
+    );
+    container.read(gameControllerProvider.notifier).toggleSelection(blue(7).id);
+    await tester.pumpAndSettle();
+
+    await tester.tap(boardTiles.first);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(SnackBar), findsNothing, reason: 'should not error');
+    final table = container.read(gameControllerProvider)!.state.table;
+    expect(table.single.tiles.length, 4);
+    expect(table.single.tiles.last, blue(7));
+  });
+
+  testWidgets('a tile that fits the LOW end of a run is accepted',
+      (tester) async {
+    // The tap path used to hard-code atStart: false, so only the high end of a
+    // run could ever be extended.
+    tester.view.physicalSize = const Size(844, 390);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final blueRun = Meld(
+      id: 1,
+      kind: MeldKind.run,
+      ownerSeat: 0,
+      tiles: [blue(5), blue(6), blue(7)],
+      jokerAssignments: const [null, null, null],
+    );
+    final state = buildState(
+      indicator: indicator,
+      hands: buildHands(
+        indicator: indicator,
+        okey: okeyIdentity,
+        cores: [
+          [blue(4)],
+          const <Tile>[],
+          const <Tile>[],
+          const <Tile>[],
+        ],
+        sizes: const [22, 21, 21, 21],
+        reserved: [blue(5), blue(6), blue(7)],
+      ),
+      table: [blueRun],
+      opened: const [true, false, false, false],
+    );
+    await pumpGame(tester, state);
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(GameScreen)),
+    );
+    final controller = container.read(gameControllerProvider.notifier)
+      ..toggleSelection(blue(4).id);
+    await tester.pumpAndSettle();
+    expect(controller.addableMeldIds(), {1});
+
+    controller.workSelection();
+    await tester.pumpAndSettle();
+
+    final table = container.read(gameControllerProvider)!.state.table;
+    expect(table.single.tiles.length, 4);
+    expect(table.single.tiles.first, blue(4), reason: 'went to the low end');
+  });
+
+  testWidgets('isleme does not depend on the order tiles were tapped',
+      (tester) async {
+    // Selecting 9 before 8 for a 5-6-7 run: 9 is illegal until 8 is down, so a
+    // single pass would strand it.
+    tester.view.physicalSize = const Size(844, 390);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final blueRun = Meld(
+      id: 1,
+      kind: MeldKind.run,
+      ownerSeat: 0,
+      tiles: [blue(5), blue(6), blue(7)],
+      jokerAssignments: const [null, null, null],
+    );
+    final state = buildState(
+      indicator: indicator,
+      hands: buildHands(
+        indicator: indicator,
+        okey: okeyIdentity,
+        cores: [
+          [blue(9), blue(8)],
+          const <Tile>[],
+          const <Tile>[],
+          const <Tile>[],
+        ],
+        sizes: const [22, 21, 21, 21],
+        reserved: [blue(5), blue(6), blue(7)],
+      ),
+      table: [blueRun],
+      opened: const [true, false, false, false],
+    );
+    await pumpGame(tester, state);
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(GameScreen)),
+    );
+    final controller = container.read(gameControllerProvider.notifier)
+      // Deliberately the awkward order.
+      ..toggleSelection(blue(9).id)
+      ..toggleSelection(blue(8).id);
+    await tester.pumpAndSettle();
+
+    controller.workSelection();
+    await tester.pumpAndSettle();
+
+    final table = container.read(gameControllerProvider)!.state.table;
+    expect(table.single.tiles.length, 5, reason: 'both tiles went down');
+    expect(table.single.tiles.last, blue(9));
+  });
+
+  testWidgets('nothing is highlighted before the player has drawn',
+      (tester) async {
+    tester.view.physicalSize = const Size(844, 390);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final blueRun = Meld(
+      id: 1,
+      kind: MeldKind.run,
+      ownerSeat: 0,
+      tiles: [blue(4), blue(5), blue(6)],
+      jokerAssignments: const [null, null, null],
+    );
+    final state = buildState(
+      indicator: indicator,
+      hands: buildHands(
+        indicator: indicator,
+        okey: okeyIdentity,
+        cores: [
+          [blue(7)],
+          const <Tile>[],
+          const <Tile>[],
+          const <Tile>[],
+        ],
+        reserved: [blue(4), blue(5), blue(6)],
+      ),
+      table: [blueRun],
+      opened: const [true, false, false, false],
+      phase: TurnPhase.awaitingDraw,
+    );
+    await pumpGame(tester, state);
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(GameScreen)),
+    );
+    final controller = container.read(gameControllerProvider.notifier)
+      ..toggleSelection(blue(7).id);
+    await tester.pumpAndSettle();
+
+    expect(
+      controller.addableMeldIds(),
+      isEmpty,
+      reason: 'the engine would refuse it until a tile has been drawn',
+    );
+  });
+
   testWidgets('the sort button offers both modes', (tester) async {
     tester.view.physicalSize = const Size(420, 900);
     tester.view.devicePixelRatio = 1;
