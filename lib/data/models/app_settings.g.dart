@@ -12,6 +12,7 @@ _AppSettings _$AppSettingsFromJson(Map<String, dynamic> json) => _AppSettings(
   fastMode: json['fastMode'] as bool? ?? false,
   animations: json['animations'] as bool? ?? true,
   keepScreenAwake: json['keepScreenAwake'] as bool? ?? true,
+  forceLandscape: json['forceLandscape'] as bool? ?? true,
   difficulty:
       $enumDecodeNullable(_$BotDifficultyEnumMap, json['difficulty']) ??
       BotDifficulty.medium,
@@ -27,6 +28,7 @@ Map<String, dynamic> _$AppSettingsToJson(_AppSettings instance) =>
       'fastMode': instance.fastMode,
       'animations': instance.animations,
       'keepScreenAwake': instance.keepScreenAwake,
+      'forceLandscape': instance.forceLandscape,
       'difficulty': _$BotDifficultyEnumMap[instance.difficulty]!,
       'ruleSet': instance.ruleSet.toJson(),
     };

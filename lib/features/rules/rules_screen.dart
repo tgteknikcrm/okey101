@@ -23,7 +23,12 @@ class RulesScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(title: Text(l10n.rulesTitle)),
-      body: ListView.builder(
+      // Capped so a landscape phone or a wide desktop window does not stretch
+      // the prose into unreadably long lines.
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 680),
+          child: ListView.builder(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
         itemCount: sections.length,
         itemBuilder: (context, index) {
@@ -54,6 +59,8 @@ class RulesScreen extends StatelessWidget {
             ),
           );
         },
+          ),
+        ),
       ),
     );
   }

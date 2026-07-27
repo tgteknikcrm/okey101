@@ -23,6 +23,13 @@ abstract class AppSettings with _$AppSettings {
     @Default(false) bool fastMode,
     @Default(true) bool animations,
     @Default(true) bool keepScreenAwake,
+
+    /// Always present the game in landscape.
+    ///
+    /// Orientation cannot be hard-locked on iOS, so when the browser insists
+    /// the viewport is portrait the board is rotated in software instead. Off
+    /// means "use whatever orientation the device reports".
+    @Default(true) bool forceLandscape,
     @Default(BotDifficulty.medium) BotDifficulty difficulty,
     @Default(RuleSet()) RuleSet ruleSet,
   }) = _AppSettings;

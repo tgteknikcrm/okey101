@@ -7,6 +7,7 @@ import 'package:okey101/app/theme.dart';
 import 'package:okey101/core/error_messages.dart';
 import 'package:okey101/core/tile_glyphs.dart';
 import 'package:okey101/core/wake_lock.dart';
+import 'package:okey101/data/models/app_settings.dart';
 import 'package:okey101/domain/models/game_state.dart';
 import 'package:okey101/domain/models/tile.dart';
 import 'package:okey101/features/game/game_controller.dart';
@@ -84,9 +85,12 @@ class _GameScreenState extends ConsumerState<GameScreen> {
             // desktop window the table is capped so the rack never stretches to
             // an unusable width.
             final compactOpponents = constraints.maxHeight < 560;
+            final landscape = constraints.maxWidth > constraints.maxHeight;
             return Center(
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 760),
+                // Landscape spends its width on the table, so the cap is looser
+                // there; portrait keeps the narrower, more readable column.
+                constraints: BoxConstraints(maxWidth: landscape ? 1100 : 760),
                 child: _Board(
                   session: session,
                   compactOpponents: compactOpponents,
@@ -150,6 +154,9 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     final choice = await showModalBottomSheet<int>(
       context: context,
       backgroundColor: OkeyPalette.felt,
+      // A landscape phone is 390 tall and the default sheet is capped at 9/16
+      // of that, which is not enough for two list tiles plus the safe area.
+      isScrollControlled: true,
       builder: (context) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -194,86 +201,201 @@ class _Board extends ConsumerWidget {
   final void Function(GameSession session, List<int?> slots) onCommitLayout;
   final void Function(GameSession session, int tileId) onDragOut;
 
+  /// Width of the two side rails in the landscape board.
+  static const double leftRailWidth = 132;
+  static const double rightRailWidth = 116;
+
+  /// Share of the height the rack may take. The rest is the table.
+  static const double rackHeightShare = 0.37;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(settingsProvider);
+    final controller = ref.read(gameControllerProvider.notifier);
+    final game = session.state;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Landscape is the intended shape of the game; portrait is the
+        // fallback for a narrow desktop window, since handsets are rotated into
+        // landscape by ForceLandscape before they ever get here.
+        final landscape = constraints.maxWidth > constraints.maxHeight;
+        final rack = _rack(
+          context,
+          ref,
+          maxHeight: constraints.maxHeight * rackHeightShare,
+        );
+
+        return Stack(
+          children: [
+            if (landscape)
+              _landscapeBoard(settings, controller, rack)
+            else
+              _portraitBoard(settings, controller, rack),
+            if (game.isHandOver)
+              HandOverSheet(
+                session: session,
+                onNextHand: controller.startNextHand,
+                onLeave: () {
+                  controller.leave();
+                  Navigator.of(context).pop();
+                },
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// Wide and short: the opponents and the actions move into side rails so the
+  /// table keeps the middle and the rack keeps the full width.
+  Widget _landscapeBoard(
+    AppSettings settings,
+    GameController controller,
+    Widget rack,
+  ) {
+    return Column(
+      children: [
+        Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(
+                width: leftRailWidth,
+                child: _OpponentRow(
+                  session: session,
+                  compact: true,
+                  vertical: true,
+                ),
+              ),
+              Expanded(
+                child: Column(
+                  children: [
+                    _Header(session: session, dense: true),
+                    _CentreStrip(
+                      session: session,
+                      colorblind: settings.colorblind,
+                      compact: true,
+                      onDrawPile: controller.drawFromPile,
+                      onDrawDiscard: controller.drawFromDiscard,
+                    ),
+                    Expanded(
+                      child: _TableArea(
+                        session: session,
+                        colorblind: settings.colorblind,
+                        focusedMeldId: focusedMeldId,
+                        onTapMeld: onTapMeld,
+                        onTapMeldTile: onTapMeldTile,
+                      ),
+                    ),
+                    _HudBar(session: session),
+                  ],
+                ),
+              ),
+              SizedBox(
+                width: rightRailWidth,
+                child: _ActionBar(
+                  session: session,
+                  onSort: onSort,
+                  vertical: true,
+                ),
+              ),
+            ],
+          ),
+        ),
+        rack,
+      ],
+    );
+  }
+
+  Widget _portraitBoard(
+    AppSettings settings,
+    GameController controller,
+    Widget rack,
+  ) {
+    return Column(
+      children: [
+        _Header(session: session),
+        _OpponentRow(session: session, compact: compactOpponents),
+        _CentreStrip(
+          session: session,
+          colorblind: settings.colorblind,
+          onDrawPile: controller.drawFromPile,
+          onDrawDiscard: controller.drawFromDiscard,
+        ),
+        Expanded(
+          child: _TableArea(
+            session: session,
+            colorblind: settings.colorblind,
+            focusedMeldId: focusedMeldId,
+            onTapMeld: onTapMeld,
+            onTapMeldTile: onTapMeldTile,
+          ),
+        ),
+        _HudBar(session: session),
+        _ActionBar(session: session, onSort: onSort),
+        rack,
+      ],
+    );
+  }
+
+  Widget _rack(
+    BuildContext context,
+    WidgetRef ref, {
+    required double maxHeight,
+  }) {
     final l10n = AppLocalizations.of(context);
     final settings = ref.watch(settingsProvider);
     final controller = ref.read(gameControllerProvider.notifier);
     final game = session.state;
 
-    return Stack(
-      children: [
-        Column(
-          children: [
-            _Header(session: session),
-            _OpponentRow(session: session, compact: compactOpponents),
-            _CentreStrip(
-              session: session,
-              colorblind: settings.colorblind,
-              onDrawPile: controller.drawFromPile,
-              onDrawDiscard: controller.drawFromDiscard,
-            ),
-            Expanded(
-              child: _TableArea(
-                session: session,
-                colorblind: settings.colorblind,
-                focusedMeldId: focusedMeldId,
-                onTapMeld: onTapMeld,
-                onTapMeldTile: onTapMeldTile,
-              ),
-            ),
-            _HudBar(session: session),
-            _ActionBar(session: session, onSort: onSort),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(6, 0, 6, 6),
-              child: RackWidget(
-                slots: session.rackSlots,
-                tilesById: {
-                  for (final tile in session.human.hand) tile.id: tile,
-                },
-                selection: session.selection,
-                okey: game.okey,
-                indicator: game.indicatorIdentity,
-                colorblind: settings.colorblind,
-                glyphFor: (color) => colorGlyph(l10n, color),
-                enabled: session.isHumanTurn,
-                animate: settings.animations,
-                onLayoutChanged: (slots) => onCommitLayout(session, slots),
-                onTapTile: controller.toggleSelection,
-                onDragOut: (tileId, _) => onDragOut(session, tileId),
-              ),
-            ),
-          ],
-        ),
-        if (game.isHandOver)
-          HandOverSheet(
-            session: session,
-            onNextHand: controller.startNextHand,
-            onLeave: () {
-              controller.leave();
-              Navigator.of(context).pop();
-            },
-          ),
-      ],
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(6, 0, 6, 6),
+      child: RackWidget(
+        slots: session.rackSlots,
+        tilesById: {for (final tile in session.human.hand) tile.id: tile},
+        selection: session.selection,
+        okey: game.okey,
+        indicator: game.indicatorIdentity,
+        colorblind: settings.colorblind,
+        glyphFor: (color) => colorGlyph(l10n, color),
+        enabled: session.isHumanTurn,
+        animate: settings.animations,
+        maxHeight: maxHeight,
+        onLayoutChanged: (slots) => onCommitLayout(session, slots),
+        onTapTile: controller.toggleSelection,
+        onDragOut: (tileId, _) => onDragOut(session, tileId),
+      ),
     );
   }
 }
 
 class _Header extends ConsumerWidget {
-  const _Header({required this.session});
+  const _Header({required this.session, this.dense = false});
 
   final GameSession session;
+
+  /// Landscape has little vertical room, so the bar loses its padding and the
+  /// icon buttons shrink.
+  final bool dense;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
     final game = session.state;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 4, 8, 2),
+      padding: dense
+          ? const EdgeInsets.fromLTRB(2, 0, 2, 0)
+          : const EdgeInsets.fromLTRB(8, 4, 8, 2),
       child: Row(
         children: [
           IconButton(
             tooltip: l10n.commonBack,
+            iconSize: dense ? 18 : 24,
+            visualDensity: dense ? VisualDensity.compact : null,
+            constraints: dense
+                ? const BoxConstraints(minWidth: 34, minHeight: 34)
+                : null,
             icon: const Icon(Icons.arrow_back),
             onPressed: () {
               ref.read(gameControllerProvider.notifier).leave();
@@ -288,8 +410,10 @@ class _Header extends ConsumerWidget {
                     game.handNumber,
                     game.ruleSet.handsPerMatch,
                   ),
-                  style: const TextStyle(
-                    fontSize: 13,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: dense ? 12 : 13,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -297,8 +421,10 @@ class _Header extends ConsumerWidget {
                   session.isHumanTurn
                       ? l10n.gameYourTurn
                       : l10n.gameThinking(game.currentPlayer.name),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 11,
+                    fontSize: dense ? 10 : 11,
                     color: session.isHumanTurn
                         ? OkeyPalette.brass
                         : OkeyPalette.ivoryShade,
@@ -309,6 +435,11 @@ class _Header extends ConsumerWidget {
           ),
           IconButton(
             tooltip: l10n.scoreboard,
+            iconSize: dense ? 18 : 24,
+            visualDensity: dense ? VisualDensity.compact : null,
+            constraints: dense
+                ? const BoxConstraints(minWidth: 34, minHeight: 34)
+                : null,
             icon: const Icon(Icons.list_alt),
             onPressed: () => _showScoreboard(context, session),
           ),
@@ -323,7 +454,9 @@ class _Header extends ConsumerWidget {
       showModalBottomSheet<void>(
       context: context,
       backgroundColor: OkeyPalette.felt,
+      isScrollControlled: true,
       builder: (context) => SafeArea(
+        child: SingleChildScrollView(
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -359,6 +492,7 @@ class _Header extends ConsumerWidget {
             ],
           ),
         ),
+        ),
       ),
       ),
     );
@@ -366,10 +500,18 @@ class _Header extends ConsumerWidget {
 }
 
 class _OpponentRow extends StatelessWidget {
-  const _OpponentRow({required this.session, this.compact = false});
+  const _OpponentRow({
+    required this.session,
+    this.compact = false,
+    this.vertical = false,
+  });
 
   final GameSession session;
   final bool compact;
+
+  /// Landscape stacks the three opponents down a side rail instead of across
+  /// the top, which is where the width is cheap and the height is not.
+  final bool vertical;
 
   @override
   Widget build(BuildContext context) {
@@ -378,6 +520,35 @@ class _OpponentRow extends StatelessWidget {
       for (var step = 1; step < kSeatCount; step++)
         (session.humanSeat + step) % kSeatCount,
     ];
+    Widget panel(int seat) => OpponentPanel(
+          player: game.players[seat],
+          isCurrent: game.currentSeat == seat && !game.isHandOver,
+          thinking: session.botThinking,
+          okey: game.okey,
+          compact: compact,
+        );
+
+    if (vertical) {
+      // Sized by content and scrolled, not divided by Expanded: three equal
+      // thirds of the rail are 59.6 logical pixels while a compact panel needs
+      // 66, which clips at any text scale above 1.0.
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(6, 2, 2, 2),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final seat in seats)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: panel(seat),
+                ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       child: Row(
@@ -386,13 +557,7 @@ class _OpponentRow extends StatelessWidget {
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 3),
-                child: OpponentPanel(
-                  player: game.players[seat],
-                  isCurrent: game.currentSeat == seat && !game.isHandOver,
-                  thinking: session.botThinking,
-                  okey: game.okey,
-                  compact: compact,
-                ),
+                child: panel(seat),
               ),
             ),
         ],
@@ -407,12 +572,18 @@ class _CentreStrip extends ConsumerWidget {
     required this.colorblind,
     required this.onDrawPile,
     required this.onDrawDiscard,
+    this.compact = false,
   });
 
   final GameSession session;
   final bool colorblind;
   final VoidCallback onDrawPile;
   final VoidCallback onDrawDiscard;
+
+  /// Smaller tiles and tighter margins for the landscape board.
+  final bool compact;
+
+  double get _tileWidth => compact ? 26 : 34;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -425,8 +596,12 @@ class _CentreStrip extends ConsumerWidget {
         session.isHumanTurn && game.phase == TurnPhase.awaitingDraw;
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      margin: compact
+          ? const EdgeInsets.fromLTRB(4, 0, 4, 3)
+          : const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: compact
+          ? const EdgeInsets.symmetric(horizontal: 6, vertical: 3)
+          : const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: const Color(0x1AFBF5E6),
         borderRadius: BorderRadius.circular(12),
@@ -439,9 +614,10 @@ class _CentreStrip extends ConsumerWidget {
             child: _Slot(
               label: l10n.gameTakeDiscard,
               enabled: canDraw && leftTop != null,
+              compact: compact,
               onTap: canDraw && leftTop != null ? onDrawDiscard : null,
               child: leftTop == null
-                  ? const _EmptySlot()
+                  ? _EmptySlot(width: _tileWidth)
                   : _tile(l10n, leftTop, game.okey),
             ),
           ),
@@ -449,16 +625,18 @@ class _CentreStrip extends ConsumerWidget {
             child: _Slot(
               label: l10n.gameRemainingTiles(game.drawPile.length),
               enabled: canDraw && game.drawPile.isNotEmpty,
+              compact: compact,
               onTap: canDraw && game.drawPile.isNotEmpty ? onDrawPile : null,
               child: game.drawPile.isEmpty
-                  ? const _EmptySlot()
-                  : const TileWidget(width: 34, faceDown: true),
+                  ? _EmptySlot(width: _tileWidth)
+                  : TileWidget(width: _tileWidth, faceDown: true),
             ),
           ),
           Expanded(
             child: _Slot(
               label: l10n.gameIndicator,
               enabled: false,
+              compact: compact,
               child: _tile(l10n, game.indicator, game.okey),
             ),
           ),
@@ -466,8 +644,9 @@ class _CentreStrip extends ConsumerWidget {
             child: _Slot(
               label: l10n.gameDiscardPile,
               enabled: false,
+              compact: compact,
               child: ownTop == null
-                  ? const _EmptySlot()
+                  ? _EmptySlot(width: _tileWidth)
                   : _tile(l10n, ownTop, game.okey),
             ),
           ),
@@ -478,7 +657,7 @@ class _CentreStrip extends ConsumerWidget {
 
   Widget _tile(AppLocalizations l10n, Tile tile, TileIdentity okey) =>
       TileWidget(
-        width: 34,
+        width: _tileWidth,
         tile: tile,
         kind: tile.isFalseJoker
             ? TileFaceKind.falseJoker
@@ -495,12 +674,14 @@ class _Slot extends StatelessWidget {
     required this.label,
     required this.child,
     required this.enabled,
+    this.compact = false,
     this.onTap,
   });
 
   final String label;
   final Widget child;
   final bool enabled;
+  final bool compact;
   final VoidCallback? onTap;
 
   @override
@@ -510,7 +691,7 @@ class _Slot extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       child: Container(
         // Generous hit area: a touch target you cannot feel needs to be big.
-        constraints: const BoxConstraints(minHeight: 64),
+        constraints: BoxConstraints(minHeight: compact ? 50 : 64),
         margin: const EdgeInsets.symmetric(horizontal: 2),
         padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
         decoration: BoxDecoration(
@@ -524,13 +705,13 @@ class _Slot extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             child,
-            const SizedBox(height: 2),
+            const SizedBox(height: 1),
             Text(
               label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontSize: 9,
+                fontSize: compact ? 8 : 9,
                 color: enabled ? OkeyPalette.brass : OkeyPalette.ivoryShade,
               ),
             ),
@@ -542,12 +723,14 @@ class _Slot extends StatelessWidget {
 }
 
 class _EmptySlot extends StatelessWidget {
-  const _EmptySlot();
+  const _EmptySlot({this.width = 34});
+
+  final double width;
 
   @override
   Widget build(BuildContext context) => Container(
-        width: 34,
-        height: TileWidget.heightFor(34),
+        width: width,
+        height: TileWidget.heightFor(width),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(6),
           border: Border.all(color: const Color(0x33FBF5E6)),
@@ -680,10 +863,19 @@ class _HudBar extends ConsumerWidget {
 }
 
 class _ActionBar extends ConsumerWidget {
-  const _ActionBar({required this.session, required this.onSort});
+  const _ActionBar({
+    required this.session,
+    required this.onSort,
+    this.vertical = false,
+  });
 
   final GameSession session;
   final VoidCallback onSort;
+
+  /// Landscape stacks the actions down the right rail. Vertical space is the
+  /// scarce axis there, so the rail scrolls and the two actions that end a turn
+  /// are placed first, where they are always reachable.
+  final bool vertical;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -694,6 +886,77 @@ class _ActionBar extends ConsumerWidget {
         session.isHumanTurn && game.phase == TurnPhase.awaitingDiscard;
     final selectionCount = session.selection.length;
 
+    final open = _Action(
+      icon: Icons.lock_open,
+      label: session.pendingMelds.isEmpty
+          ? l10n.gameOpenAction
+          : '${l10n.gameOpenAction} (${controller.pendingPoints()})',
+      primary: true,
+      expand: vertical,
+      onPressed: canAct ? controller.openWithPending : null,
+    );
+    final discard = _Action(
+      icon: Icons.south_east,
+      label: l10n.gameDiscardPile,
+      primary: true,
+      expand: vertical,
+      onPressed: canAct && selectionCount == 1
+          ? () {
+              ref.read(feedbackProvider).light();
+              controller
+                ..discard(session.selection.single)
+                ..clearSelection();
+            }
+          : null,
+    );
+    final sort = _Action(
+      icon: Icons.sort,
+      label: l10n.gameSort,
+      expand: vertical,
+      onPressed: session.isHumanTurn ? onSort : null,
+    );
+    final undo = _Action(
+      icon: Icons.undo,
+      label: l10n.commonUndo,
+      expand: vertical,
+      onPressed: session.canUndo ? controller.undoTurn : null,
+    );
+    final layMeld = _Action(
+      icon: Icons.playlist_add,
+      label: l10n.gameLayMeld,
+      expand: vertical,
+      onPressed: canAct && selectionCount >= 2
+          ? (session.human.hasOpened
+              ? controller.laySelectionAsMeld
+              : controller.stageSelection)
+          : null,
+    );
+    final layPairs = _Action(
+      icon: Icons.filter_2,
+      label: l10n.gameLayPairs,
+      expand: vertical,
+      onPressed: canAct ? controller.layPairs : null,
+    );
+    final showPairs =
+        !session.human.hasOpened || session.human.openedWithPairs;
+
+    if (vertical) {
+      return SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(2, 2, 6, 2),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (!session.human.hasOpened) open,
+            discard,
+            layMeld,
+            if (showPairs) layPairs,
+            sort,
+            undo,
+          ],
+        ),
+      );
+    }
+
     // A Wrap rather than a horizontal scroller: on a narrow phone the primary
     // action must never end up off the edge where it cannot be found.
     return Padding(
@@ -702,64 +965,12 @@ class _ActionBar extends ConsumerWidget {
         alignment: WrapAlignment.center,
         runSpacing: 4,
         children: [
-          _Action(
-            icon: Icons.sort,
-            label: l10n.gameSort,
-            onPressed: session.isHumanTurn ? onSort : null,
-          ),
-          _Action(
-            icon: Icons.undo,
-            label: l10n.commonUndo,
-            onPressed: session.canUndo ? controller.undoTurn : null,
-          ),
-          if (!session.human.hasOpened) ...[
-            _Action(
-              icon: Icons.playlist_add,
-              label: l10n.gameLayMeld,
-              onPressed:
-                  canAct && selectionCount >= 2 ? controller.stageSelection : null,
-            ),
-            _Action(
-              icon: Icons.lock_open,
-              label: session.pendingMelds.isEmpty
-                  ? l10n.gameOpenAction
-                  : '${l10n.gameOpenAction} (${controller.pendingPoints()})',
-              primary: true,
-              onPressed: canAct ? controller.openWithPending : null,
-            ),
-            _Action(
-              icon: Icons.filter_2,
-              label: l10n.gameLayPairs,
-              onPressed: canAct ? controller.layPairs : null,
-            ),
-          ] else ...[
-            _Action(
-              icon: Icons.playlist_add,
-              label: l10n.gameLayMeld,
-              onPressed: canAct && selectionCount >= 2
-                  ? controller.laySelectionAsMeld
-                  : null,
-            ),
-            if (session.human.openedWithPairs)
-              _Action(
-                icon: Icons.filter_2,
-                label: l10n.gameLayPairs,
-                onPressed: canAct ? controller.layPairs : null,
-              ),
-          ],
-          _Action(
-            icon: Icons.south_east,
-            label: l10n.gameDiscardPile,
-            primary: true,
-            onPressed: canAct && selectionCount == 1
-                ? () {
-                    ref.read(feedbackProvider).light();
-                    controller
-                      ..discard(session.selection.single)
-                      ..clearSelection();
-                  }
-                : null,
-          ),
+          sort,
+          undo,
+          layMeld,
+          if (!session.human.hasOpened) open,
+          if (showPairs) layPairs,
+          discard,
         ],
       ),
     );
@@ -772,6 +983,7 @@ class _Action extends StatelessWidget {
     required this.label,
     required this.onPressed,
     this.primary = false,
+    this.expand = false,
   });
 
   final IconData icon;
@@ -779,27 +991,48 @@ class _Action extends StatelessWidget {
   final VoidCallback? onPressed;
   final bool primary;
 
+  /// Fill the available width, for the stacked landscape rail.
+  final bool expand;
+
   @override
   Widget build(BuildContext context) {
+    final label = Text(
+      this.label,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(fontSize: expand ? 12 : null),
+    );
+    // A padded tap target silently floors every button at 48 logical pixels,
+    // which puts six stacked actions at 312 in a 240-pixel rail - the last two
+    // end up below the fold. shrinkWrap lets the declared height stand.
+    final size = expand ? const Size(0, 36) : const Size(64, 44);
+    final padding = EdgeInsets.symmetric(horizontal: expand ? 6 : 12);
+    final tapTarget =
+        expand ? MaterialTapTargetSize.shrinkWrap : MaterialTapTargetSize.padded;
+
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 3),
+      padding: expand
+          ? const EdgeInsets.symmetric(vertical: 1)
+          : const EdgeInsets.symmetric(horizontal: 3),
       child: primary
           ? FilledButton.icon(
               onPressed: onPressed,
               icon: Icon(icon, size: 16),
-              label: Text(label),
+              label: label,
               style: FilledButton.styleFrom(
-                minimumSize: const Size(64, 44),
-                padding: const EdgeInsets.symmetric(horizontal: 12),
+                minimumSize: size,
+                padding: padding,
+                tapTargetSize: tapTarget,
               ),
             )
           : OutlinedButton.icon(
               onPressed: onPressed,
               icon: Icon(icon, size: 16),
-              label: Text(label),
+              label: label,
               style: OutlinedButton.styleFrom(
-                minimumSize: const Size(64, 44),
-                padding: const EdgeInsets.symmetric(horizontal: 12),
+                minimumSize: size,
+                padding: padding,
+                tapTargetSize: tapTarget,
               ),
             ),
     );

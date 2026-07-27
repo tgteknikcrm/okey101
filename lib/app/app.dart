@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:okey101/app/force_landscape.dart';
 import 'package:okey101/app/providers.dart';
 import 'package:okey101/app/theme.dart';
 import 'package:okey101/features/debug/debug_screen.dart';
@@ -25,6 +26,9 @@ class Okey101App extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final locale = ref.watch(localeProvider);
+    final forceLandscape = ref.watch(
+      settingsProvider.select((s) => s.forceLandscape),
+    );
     return MaterialApp(
       onGenerateTitle: (context) => AppLocalizations.of(context).appTitle,
       debugShowCheckedModeBanner: false,
@@ -32,6 +36,12 @@ class Okey101App extends ConsumerWidget {
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       theme: buildOkeyTheme(),
+      // Wraps the Navigator, so dialogs, snackbars and bottom sheets are
+      // rotated along with the screen underneath them.
+      builder: (context, child) => ForceLandscape(
+        enabled: forceLandscape,
+        child: child ?? const SizedBox.shrink(),
+      ),
       initialRoute: Routes.menu,
       routes: {
         Routes.menu: (_) => const MenuScreen(),

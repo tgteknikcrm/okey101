@@ -19,7 +19,12 @@ mixin _$AppSettings {
  String get languageCode;/// Adds a colour glyph to every tile. The whole game is colour coded, so
 /// this is not optional for a lot of people.
  bool get colorblind;/// Bots play without their think delay.
- bool get fastMode; bool get animations; bool get keepScreenAwake; BotDifficulty get difficulty; RuleSet get ruleSet;
+ bool get fastMode; bool get animations; bool get keepScreenAwake;/// Always present the game in landscape.
+///
+/// Orientation cannot be hard-locked on iOS, so when the browser insists
+/// the viewport is portrait the board is rotated in software instead. Off
+/// means "use whatever orientation the device reports".
+ bool get forceLandscape; BotDifficulty get difficulty; RuleSet get ruleSet;
 /// Create a copy of AppSettings
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -32,16 +37,16 @@ $AppSettingsCopyWith<AppSettings> get copyWith => _$AppSettingsCopyWithImpl<AppS
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is AppSettings&&(identical(other.languageCode, languageCode) || other.languageCode == languageCode)&&(identical(other.colorblind, colorblind) || other.colorblind == colorblind)&&(identical(other.fastMode, fastMode) || other.fastMode == fastMode)&&(identical(other.animations, animations) || other.animations == animations)&&(identical(other.keepScreenAwake, keepScreenAwake) || other.keepScreenAwake == keepScreenAwake)&&(identical(other.difficulty, difficulty) || other.difficulty == difficulty)&&(identical(other.ruleSet, ruleSet) || other.ruleSet == ruleSet));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is AppSettings&&(identical(other.languageCode, languageCode) || other.languageCode == languageCode)&&(identical(other.colorblind, colorblind) || other.colorblind == colorblind)&&(identical(other.fastMode, fastMode) || other.fastMode == fastMode)&&(identical(other.animations, animations) || other.animations == animations)&&(identical(other.keepScreenAwake, keepScreenAwake) || other.keepScreenAwake == keepScreenAwake)&&(identical(other.forceLandscape, forceLandscape) || other.forceLandscape == forceLandscape)&&(identical(other.difficulty, difficulty) || other.difficulty == difficulty)&&(identical(other.ruleSet, ruleSet) || other.ruleSet == ruleSet));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,languageCode,colorblind,fastMode,animations,keepScreenAwake,difficulty,ruleSet);
+int get hashCode => Object.hash(runtimeType,languageCode,colorblind,fastMode,animations,keepScreenAwake,forceLandscape,difficulty,ruleSet);
 
 @override
 String toString() {
-  return 'AppSettings(languageCode: $languageCode, colorblind: $colorblind, fastMode: $fastMode, animations: $animations, keepScreenAwake: $keepScreenAwake, difficulty: $difficulty, ruleSet: $ruleSet)';
+  return 'AppSettings(languageCode: $languageCode, colorblind: $colorblind, fastMode: $fastMode, animations: $animations, keepScreenAwake: $keepScreenAwake, forceLandscape: $forceLandscape, difficulty: $difficulty, ruleSet: $ruleSet)';
 }
 
 
@@ -52,7 +57,7 @@ abstract mixin class $AppSettingsCopyWith<$Res>  {
   factory $AppSettingsCopyWith(AppSettings value, $Res Function(AppSettings) _then) = _$AppSettingsCopyWithImpl;
 @useResult
 $Res call({
- String languageCode, bool colorblind, bool fastMode, bool animations, bool keepScreenAwake, BotDifficulty difficulty, RuleSet ruleSet
+ String languageCode, bool colorblind, bool fastMode, bool animations, bool keepScreenAwake, bool forceLandscape, BotDifficulty difficulty, RuleSet ruleSet
 });
 
 
@@ -69,13 +74,14 @@ class _$AppSettingsCopyWithImpl<$Res>
 
 /// Create a copy of AppSettings
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? languageCode = null,Object? colorblind = null,Object? fastMode = null,Object? animations = null,Object? keepScreenAwake = null,Object? difficulty = null,Object? ruleSet = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? languageCode = null,Object? colorblind = null,Object? fastMode = null,Object? animations = null,Object? keepScreenAwake = null,Object? forceLandscape = null,Object? difficulty = null,Object? ruleSet = null,}) {
   return _then(_self.copyWith(
 languageCode: null == languageCode ? _self.languageCode : languageCode // ignore: cast_nullable_to_non_nullable
 as String,colorblind: null == colorblind ? _self.colorblind : colorblind // ignore: cast_nullable_to_non_nullable
 as bool,fastMode: null == fastMode ? _self.fastMode : fastMode // ignore: cast_nullable_to_non_nullable
 as bool,animations: null == animations ? _self.animations : animations // ignore: cast_nullable_to_non_nullable
 as bool,keepScreenAwake: null == keepScreenAwake ? _self.keepScreenAwake : keepScreenAwake // ignore: cast_nullable_to_non_nullable
+as bool,forceLandscape: null == forceLandscape ? _self.forceLandscape : forceLandscape // ignore: cast_nullable_to_non_nullable
 as bool,difficulty: null == difficulty ? _self.difficulty : difficulty // ignore: cast_nullable_to_non_nullable
 as BotDifficulty,ruleSet: null == ruleSet ? _self.ruleSet : ruleSet // ignore: cast_nullable_to_non_nullable
 as RuleSet,
@@ -172,10 +178,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String languageCode,  bool colorblind,  bool fastMode,  bool animations,  bool keepScreenAwake,  BotDifficulty difficulty,  RuleSet ruleSet)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String languageCode,  bool colorblind,  bool fastMode,  bool animations,  bool keepScreenAwake,  bool forceLandscape,  BotDifficulty difficulty,  RuleSet ruleSet)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _AppSettings() when $default != null:
-return $default(_that.languageCode,_that.colorblind,_that.fastMode,_that.animations,_that.keepScreenAwake,_that.difficulty,_that.ruleSet);case _:
+return $default(_that.languageCode,_that.colorblind,_that.fastMode,_that.animations,_that.keepScreenAwake,_that.forceLandscape,_that.difficulty,_that.ruleSet);case _:
   return orElse();
 
 }
@@ -193,10 +199,10 @@ return $default(_that.languageCode,_that.colorblind,_that.fastMode,_that.animati
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String languageCode,  bool colorblind,  bool fastMode,  bool animations,  bool keepScreenAwake,  BotDifficulty difficulty,  RuleSet ruleSet)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String languageCode,  bool colorblind,  bool fastMode,  bool animations,  bool keepScreenAwake,  bool forceLandscape,  BotDifficulty difficulty,  RuleSet ruleSet)  $default,) {final _that = this;
 switch (_that) {
 case _AppSettings():
-return $default(_that.languageCode,_that.colorblind,_that.fastMode,_that.animations,_that.keepScreenAwake,_that.difficulty,_that.ruleSet);case _:
+return $default(_that.languageCode,_that.colorblind,_that.fastMode,_that.animations,_that.keepScreenAwake,_that.forceLandscape,_that.difficulty,_that.ruleSet);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -213,10 +219,10 @@ return $default(_that.languageCode,_that.colorblind,_that.fastMode,_that.animati
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String languageCode,  bool colorblind,  bool fastMode,  bool animations,  bool keepScreenAwake,  BotDifficulty difficulty,  RuleSet ruleSet)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String languageCode,  bool colorblind,  bool fastMode,  bool animations,  bool keepScreenAwake,  bool forceLandscape,  BotDifficulty difficulty,  RuleSet ruleSet)?  $default,) {final _that = this;
 switch (_that) {
 case _AppSettings() when $default != null:
-return $default(_that.languageCode,_that.colorblind,_that.fastMode,_that.animations,_that.keepScreenAwake,_that.difficulty,_that.ruleSet);case _:
+return $default(_that.languageCode,_that.colorblind,_that.fastMode,_that.animations,_that.keepScreenAwake,_that.forceLandscape,_that.difficulty,_that.ruleSet);case _:
   return null;
 
 }
@@ -228,7 +234,7 @@ return $default(_that.languageCode,_that.colorblind,_that.fastMode,_that.animati
 @JsonSerializable()
 
 class _AppSettings extends AppSettings {
-  const _AppSettings({this.languageCode = 'tr', this.colorblind = false, this.fastMode = false, this.animations = true, this.keepScreenAwake = true, this.difficulty = BotDifficulty.medium, this.ruleSet = const RuleSet()}): super._();
+  const _AppSettings({this.languageCode = 'tr', this.colorblind = false, this.fastMode = false, this.animations = true, this.keepScreenAwake = true, this.forceLandscape = true, this.difficulty = BotDifficulty.medium, this.ruleSet = const RuleSet()}): super._();
   factory _AppSettings.fromJson(Map<String, dynamic> json) => _$AppSettingsFromJson(json);
 
 /// 'tr' or 'en'. Turkish is the default.
@@ -240,6 +246,12 @@ class _AppSettings extends AppSettings {
 @override@JsonKey() final  bool fastMode;
 @override@JsonKey() final  bool animations;
 @override@JsonKey() final  bool keepScreenAwake;
+/// Always present the game in landscape.
+///
+/// Orientation cannot be hard-locked on iOS, so when the browser insists
+/// the viewport is portrait the board is rotated in software instead. Off
+/// means "use whatever orientation the device reports".
+@override@JsonKey() final  bool forceLandscape;
 @override@JsonKey() final  BotDifficulty difficulty;
 @override@JsonKey() final  RuleSet ruleSet;
 
@@ -256,16 +268,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _AppSettings&&(identical(other.languageCode, languageCode) || other.languageCode == languageCode)&&(identical(other.colorblind, colorblind) || other.colorblind == colorblind)&&(identical(other.fastMode, fastMode) || other.fastMode == fastMode)&&(identical(other.animations, animations) || other.animations == animations)&&(identical(other.keepScreenAwake, keepScreenAwake) || other.keepScreenAwake == keepScreenAwake)&&(identical(other.difficulty, difficulty) || other.difficulty == difficulty)&&(identical(other.ruleSet, ruleSet) || other.ruleSet == ruleSet));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _AppSettings&&(identical(other.languageCode, languageCode) || other.languageCode == languageCode)&&(identical(other.colorblind, colorblind) || other.colorblind == colorblind)&&(identical(other.fastMode, fastMode) || other.fastMode == fastMode)&&(identical(other.animations, animations) || other.animations == animations)&&(identical(other.keepScreenAwake, keepScreenAwake) || other.keepScreenAwake == keepScreenAwake)&&(identical(other.forceLandscape, forceLandscape) || other.forceLandscape == forceLandscape)&&(identical(other.difficulty, difficulty) || other.difficulty == difficulty)&&(identical(other.ruleSet, ruleSet) || other.ruleSet == ruleSet));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,languageCode,colorblind,fastMode,animations,keepScreenAwake,difficulty,ruleSet);
+int get hashCode => Object.hash(runtimeType,languageCode,colorblind,fastMode,animations,keepScreenAwake,forceLandscape,difficulty,ruleSet);
 
 @override
 String toString() {
-  return 'AppSettings(languageCode: $languageCode, colorblind: $colorblind, fastMode: $fastMode, animations: $animations, keepScreenAwake: $keepScreenAwake, difficulty: $difficulty, ruleSet: $ruleSet)';
+  return 'AppSettings(languageCode: $languageCode, colorblind: $colorblind, fastMode: $fastMode, animations: $animations, keepScreenAwake: $keepScreenAwake, forceLandscape: $forceLandscape, difficulty: $difficulty, ruleSet: $ruleSet)';
 }
 
 
@@ -276,7 +288,7 @@ abstract mixin class _$AppSettingsCopyWith<$Res> implements $AppSettingsCopyWith
   factory _$AppSettingsCopyWith(_AppSettings value, $Res Function(_AppSettings) _then) = __$AppSettingsCopyWithImpl;
 @override @useResult
 $Res call({
- String languageCode, bool colorblind, bool fastMode, bool animations, bool keepScreenAwake, BotDifficulty difficulty, RuleSet ruleSet
+ String languageCode, bool colorblind, bool fastMode, bool animations, bool keepScreenAwake, bool forceLandscape, BotDifficulty difficulty, RuleSet ruleSet
 });
 
 
@@ -293,13 +305,14 @@ class __$AppSettingsCopyWithImpl<$Res>
 
 /// Create a copy of AppSettings
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? languageCode = null,Object? colorblind = null,Object? fastMode = null,Object? animations = null,Object? keepScreenAwake = null,Object? difficulty = null,Object? ruleSet = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? languageCode = null,Object? colorblind = null,Object? fastMode = null,Object? animations = null,Object? keepScreenAwake = null,Object? forceLandscape = null,Object? difficulty = null,Object? ruleSet = null,}) {
   return _then(_AppSettings(
 languageCode: null == languageCode ? _self.languageCode : languageCode // ignore: cast_nullable_to_non_nullable
 as String,colorblind: null == colorblind ? _self.colorblind : colorblind // ignore: cast_nullable_to_non_nullable
 as bool,fastMode: null == fastMode ? _self.fastMode : fastMode // ignore: cast_nullable_to_non_nullable
 as bool,animations: null == animations ? _self.animations : animations // ignore: cast_nullable_to_non_nullable
 as bool,keepScreenAwake: null == keepScreenAwake ? _self.keepScreenAwake : keepScreenAwake // ignore: cast_nullable_to_non_nullable
+as bool,forceLandscape: null == forceLandscape ? _self.forceLandscape : forceLandscape // ignore: cast_nullable_to_non_nullable
 as bool,difficulty: null == difficulty ? _self.difficulty : difficulty // ignore: cast_nullable_to_non_nullable
 as BotDifficulty,ruleSet: null == ruleSet ? _self.ruleSet : ruleSet // ignore: cast_nullable_to_non_nullable
 as RuleSet,

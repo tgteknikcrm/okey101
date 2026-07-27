@@ -7,7 +7,7 @@
     "background_color": "#0F3D2E",
     "theme_color": "#0F3D2E",
     "description": "Yuzbir Okey - uc bota karsi, cevrimdisi oynanan tarayici oyunu.",
-    "orientation": "any",
+    "orientation": "landscape",
     "lang": "tr",
     "dir": "ltr",
     "categories": ["games", "entertainment"],

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:okey101/app/theme.dart';
 import 'package:okey101/domain/models/tile.dart';
@@ -24,6 +26,7 @@ class RackWidget extends StatefulWidget {
     this.onDragOut,
     this.enabled = true,
     this.animate = true,
+    this.maxHeight,
   });
 
   final List<int?> slots;
@@ -45,6 +48,14 @@ class RackWidget extends StatefulWidget {
 
   /// Off when the player has turned animations off in Settings.
   final bool animate;
+
+  /// Ceiling on the rack's own height.
+  ///
+  /// Sizing on width alone is fine in portrait, but a landscape phone is wide
+  /// and short: thirteen columns across 844 logical pixels would give 61-pixel
+  /// tiles and a rack 192 pixels tall, half the screen. With a ceiling the
+  /// tiles shrink to fit instead of eating the table.
+  final double? maxHeight;
 
   @override
   State<RackWidget> createState() => _RackWidgetState();
@@ -69,10 +80,24 @@ class _RackWidgetState extends State<RackWidget> {
 
   List<int?> get _slots => _working ?? widget.slots;
 
+  /// Chrome the rack adds around the rows of tiles: the outer padding plus one
+  /// gap between each pair of rows.
+  static const double _chromeHeight =
+      _padding * 2 + _rowGap * (kRackRows - 1);
+
   Size _cellSize(double maxWidth) {
     final usable = maxWidth - _padding * 2 - _gap * (kRackColumns - 1);
-    final width = (usable / kRackColumns).clamp(16.0, 64.0);
-    return Size(width, TileWidget.heightFor(width));
+    var width = usable / kRackColumns;
+
+    final budget = widget.maxHeight;
+    if (budget != null) {
+      final fromHeight =
+          (budget - _chromeHeight) / (kRackRows * TileWidget.aspectRatio);
+      width = math.min(width, fromHeight);
+    }
+
+    final clamped = width.clamp(14.0, 64.0);
+    return Size(clamped, TileWidget.heightFor(clamped));
   }
 
   Offset _originOf(int slot, Size cell) {
@@ -109,53 +134,64 @@ class _RackWidgetState extends State<RackWidget> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final cell = _cellSize(constraints.maxWidth);
-        final height =
-            _padding * 2 + cell.height * kRackRows + _rowGap;
+        final height = _chromeHeight + cell.height * kRackRows;
+        // Centred, so a rack narrower than the viewport (height-capped in
+        // landscape) sits in the middle rather than hugging the left edge.
+        final inset = (constraints.maxWidth -
+                (_padding * 2 +
+                    cell.width * kRackColumns +
+                    _gap * (kRackColumns - 1))) /
+            2;
 
         return SizedBox(
           height: height,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [OkeyPalette.rackLight, OkeyPalette.rack],
-              ),
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x55000000),
-                  blurRadius: 10,
-                  offset: Offset(0, -2),
+          child: Padding(
+            padding:
+                EdgeInsets.symmetric(horizontal: inset > 0 ? inset : 0),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [OkeyPalette.rackLight, OkeyPalette.rack],
                 ),
-              ],
-            ),
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTapUp: widget.enabled
-                  ? (details) => _handleTap(details.localPosition, cell)
-                  : null,
-              onPanDown: widget.enabled
-                  ? (details) => _handlePanDown(details, cell)
-                  : null,
-              onPanStart: widget.enabled
-                  ? (details) => _handlePanStart(details, cell)
-                  : null,
-              onPanUpdate: widget.enabled
-                  ? (details) => _handlePanUpdate(details, cell)
-                  : null,
-              onPanEnd: widget.enabled ? (details) => _handlePanEnd() : null,
-              onPanCancel: widget.enabled ? _cancelDrag : null,
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  for (var slot = 0; slot < kRackSlots; slot++)
-                    _slotFrame(slot, cell),
-                  for (var slot = 0; slot < kRackSlots; slot++)
-                    if (_slots[slot] != null && slot != _draggingSlot)
-                      _positionedTile(slot, cell),
-                  if (_draggingSlot != null) _draggedTile(cell),
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x55000000),
+                    blurRadius: 10,
+                    offset: Offset(0, -2),
+                  ),
                 ],
+              ),
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTapUp: widget.enabled
+                    ? (details) => _handleTap(details.localPosition, cell)
+                    : null,
+                onPanDown: widget.enabled
+                    ? (details) => _handlePanDown(details, cell)
+                    : null,
+                onPanStart: widget.enabled
+                    ? (details) => _handlePanStart(details, cell)
+                    : null,
+                onPanUpdate: widget.enabled
+                    ? (details) => _handlePanUpdate(details, cell)
+                    : null,
+                onPanEnd:
+                    widget.enabled ? (details) => _handlePanEnd() : null,
+                onPanCancel: widget.enabled ? _cancelDrag : null,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    for (var slot = 0; slot < kRackSlots; slot++)
+                      _slotFrame(slot, cell),
+                    for (var slot = 0; slot < kRackSlots; slot++)
+                      if (_slots[slot] != null && slot != _draggingSlot)
+                        _positionedTile(slot, cell),
+                    if (_draggingSlot != null) _draggedTile(cell),
+                  ],
+                ),
               ),
             ),
           ),

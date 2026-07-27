@@ -149,6 +149,8 @@
   "settingsAnimations": "Animations",
   "settingsAnimationsDesc": "Deal, draw and discard animations",
   "settingsKeepAwake": "Keep screen awake",
+  "settingsForceLandscape": "Always landscape",
+  "settingsForceLandscapeDesc": "Shows the table in landscape even when the phone is held upright. Orientation cannot be locked on iOS, so the board is rotated in software instead.",
   "settingsRules": "Rules and scoring",
   "settingsPreset": "Rule preset",
   "presetStandard": "Standard",

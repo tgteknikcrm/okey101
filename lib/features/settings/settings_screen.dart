@@ -32,7 +32,12 @@ class SettingsScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(title: Text(l10n.settingsTitle)),
-      body: ListView(
+      // Capped: full-width switch rows on a landscape phone or a desktop window
+      // put the label and its control absurdly far apart.
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 640),
+          child: ListView(
         padding: const EdgeInsets.fromLTRB(12, 4, 12, 40),
         children: [
           _SectionTitle(l10n.settingsGeneral),
@@ -71,6 +76,13 @@ class SettingsScreen extends ConsumerWidget {
             value: settings.keepScreenAwake,
             onChanged: (value) =>
                 notifier.update((s) => s.copyWith(keepScreenAwake: value)),
+          ),
+          SwitchListTile(
+            title: Text(l10n.settingsForceLandscape),
+            subtitle: Text(l10n.settingsForceLandscapeDesc),
+            value: settings.forceLandscape,
+            onChanged: (value) =>
+                notifier.update((s) => s.copyWith(forceLandscape: value)),
           ),
           _ChoiceTile<BotDifficulty>(
             title: l10n.settingsPreset,
@@ -298,6 +310,8 @@ class SettingsScreen extends ConsumerWidget {
             ),
           ),
         ],
+          ),
+        ),
       ),
     );
   }

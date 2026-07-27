@@ -38,10 +38,14 @@ class HandOverSheet extends StatelessWidget {
       color: const Color(0xCC061F17),
       child: Center(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
-          child: Card(
-            child: Padding(
-              padding: const EdgeInsets.all(18),
+          padding: const EdgeInsets.all(12),
+          // Without a cap the card stretches the full landscape width and the
+          // scoreboard columns drift apart.
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.all(14),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -124,6 +128,7 @@ class HandOverSheet extends StatelessWidget {
                       label: Text(l10n.handOverNext),
                     ),
                 ],
+                ),
               ),
             ),
           ),

@@ -149,6 +149,8 @@
   "settingsAnimations": "Animasyonlar",
   "settingsAnimationsDesc": "Dağıtma, çekme ve atma animasyonları",
   "settingsKeepAwake": "Ekranı açık tut",
+  "settingsForceLandscape": "Her zaman yatay",
+  "settingsForceLandscapeDesc": "Telefon dikey tutulsa bile masa yatay gösterilir. iOS'ta tarayıcı yönü kilitlenemediği için ekran yazılımsal çevrilir.",
   "settingsRules": "Kurallar ve puanlama",
   "settingsPreset": "Kural seti",
   "presetStandard": "Standart",
