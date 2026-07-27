@@ -12,6 +12,12 @@
 #   bash tool/publish.sh
 set -euo pipefail
 
+# Git Bash on Windows rewrites any argument that looks like a Unix path, so
+# --base-href /okey101/ reaches Flutter as C:/Program Files/Git/okey101/ and the
+# build fails. This turns that off for the whole script.
+export MSYS_NO_PATHCONV=1
+export MSYS2_ARG_CONV_EXCL='*'
+
 REPO_URL="https://github.com/tgteknikcrm/okey101.git"
 BASE_HREF="/okey101/"
 BRANCH="gh-pages"
