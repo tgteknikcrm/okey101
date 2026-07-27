@@ -56,20 +56,31 @@ WebKit-based iOS browsers is unreliable.
 
 ## Deployment
 
-Pushing to `main` runs `.github/workflows/deploy.yml`, which builds and deploys
-to GitHub Pages. Repository **Settings → Pages → Source** is already set to
-**GitHub Actions**.
+The site is live at **https://tgteknikcrm.github.io/okey101/**.
 
-### One-time step: install the workflow
+**Current setup:** Pages serves the `gh-pages` branch, which holds build output
+only. To publish a change:
 
-The workflow file is kept at [`deploy/github-pages-workflow.yml`](deploy/github-pages-workflow.yml)
-because GitHub refuses to accept a file under `.github/workflows/` from a token
-that lacks the `workflow` OAuth scope. Install it once, either way:
+```bash
+bash tool/publish.sh
+```
+
+That analyses, tests, builds with the right base href, force-pushes the output
+to `gh-pages`, and asks Pages to rebuild.
+
+### Switching to the Actions pipeline
+
+The intended setup is Pages → *Source* → **GitHub Actions**, with
+[`deploy/github-pages-workflow.yml`](deploy/github-pages-workflow.yml) doing the
+build on every push to `main`. It is not installed yet because GitHub rejects
+any write under `.github/workflows/` from a token without the `workflow` OAuth
+scope, and the token available during development only had `gist, read:org,
+repo`. Install it once, either way:
 
 **From a terminal**
 
 ```bash
-gh auth refresh -h github.com -s workflow      # one browser click
+gh auth refresh -h github.com -s workflow      # one browser approval
 mkdir -p .github/workflows
 cp deploy/github-pages-workflow.yml .github/workflows/deploy.yml
 git add .github/workflows/deploy.yml
@@ -83,11 +94,11 @@ Repo → *Add file* → *Create new file* → name it
 `.github/workflows/deploy.yml` → paste the contents of
 `deploy/github-pages-workflow.yml` → *Commit*.
 
-Either way the first run starts immediately and the site goes live at
-https://tgteknikcrm.github.io/okey101/.
+Then set **Settings → Pages → Source** to **GitHub Actions**. After that every
+push to `main` deploys on its own and `tool/publish.sh` is no longer needed.
 
-> Service workers cache aggressively. If a change does not show up after a push,
-> fully close and reopen the installed app.
+> Service workers cache aggressively. If a change does not show up after a
+> deploy, fully close and reopen the installed app.
 
 ## Benchmarking
 
