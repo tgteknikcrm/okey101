@@ -44,10 +44,11 @@ abstract final class BotUtils {
     final solver = solverFor(view);
     final threshold = view.ruleSet.openThresholdFor(view.openedCount);
     final direct = solver.maximizePoints(view.hand);
-    if (direct.points >= threshold &&
-        leavesALegalDiscard(view, direct.leftovers)) {
-      return direct;
-    }
+    // Removing a tile can never raise the score, so a hand that cannot reach
+    // the threshold with everything available cannot reach it at all. Checking
+    // this first keeps the expensive search below off the hot path entirely.
+    if (direct.points < threshold) return null;
+    if (leavesALegalDiscard(view, direct.leftovers)) return direct;
     return _openingHoldingOneBack(view, solver, threshold);
   }
 
@@ -123,7 +124,19 @@ abstract final class BotUtils {
   /// Once the threshold is cleared, extra points on the table are worth
   /// nothing, while extra tiles off the rack are worth their face value in the
   /// exhausted-deck case and bring the hand closer to going out.
-  static MeldSolution? denseOpeningFor(PlayerView view) {
+  static MeldSolution? denseOpeningFor(PlayerView view) => bestOpening(view);
+
+  /// The opening to play, in one pass.
+  ///
+  /// The densest lay-down that clears the threshold is preferred: past the
+  /// threshold extra points on the table buy nothing, while extra tiles off the
+  /// rack buy both a smaller exhausted-deck score and a shorter road to going
+  /// out. A kafa - everything melded but one tile - falls out of this naturally
+  /// as the densest solution with exactly one leftover.
+  ///
+  /// Deliberately a single [MeldSolver.maximizeMeldedTiles] call plus at most
+  /// one [MeldSolver.maximizePoints] call: this runs on every bot turn.
+  static MeldSolution? bestOpening(PlayerView view) {
     if (view.hasOpened) return null;
     final solver = solverFor(view);
     final threshold = view.ruleSet.openThresholdFor(view.openedCount);

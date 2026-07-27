@@ -57,14 +57,17 @@ class HardBot implements BotBrain {
     // The single most valuable draw in the game: one that turns a hand that
     // cannot open into one that can. Failing to open costs a flat 202 whenever
     // anybody goes out, which dwarfs every deadwood consideration.
+    //
+    // The with-tile solve runs first so the far more common "still short of the
+    // threshold" case costs one solve instead of two.
     if (!view.hasOpened) {
       final threshold = view.ruleSet.openThresholdFor(view.openedCount);
-      if (solver.maximizePoints(view.hand).points < threshold &&
-          solver.maximizePoints(withTop).points >= threshold) {
+      if (solver.maximizePoints(withTop).points >= threshold &&
+          solver.maximizePoints(view.hand).points < threshold) {
         return const GameAction.drawFromDiscard();
       }
-    } else if (solver.canFinish(view.hand) == null &&
-        solver.canFinish(withTop) != null) {
+    } else if (solver.canFinish(withTop) != null &&
+        solver.canFinish(view.hand) == null) {
       // Second most valuable: the tile that lets the hand go out.
       return const GameAction.drawFromDiscard();
     }
@@ -114,18 +117,11 @@ class HardBot implements BotBrain {
     HandEvaluation evaluation,
     List<OpponentBelief> beliefs,
   ) {
-    // Going out in one turn from a full hand is the biggest score at the table.
-    // The rules require a kafa to clear the opening threshold like any other
-    // open, so this is only ever offered when it genuinely does.
-    final kafa = BotUtils.finishingOpeningFor(view);
-    if (kafa != null) {
-      return GameAction.open(melds: kafa.toProposals());
-    }
-
-    // Past the threshold, extra points on the table buy nothing; extra tiles
-    // off the rack buy both a smaller exhausted-deck score and a shorter road
-    // to going out.
-    final opening = BotUtils.denseOpeningFor(view);
+    // Prefers the densest lay-down that clears the threshold, which is also how
+    // a kafa - everything melded but the one tile to throw - gets found. The
+    // rules require a kafa to clear the threshold like any other open, so this
+    // is only ever offered when it genuinely does.
+    final opening = BotUtils.bestOpening(view);
     if (opening != null) {
       return GameAction.open(melds: opening.toProposals());
     }

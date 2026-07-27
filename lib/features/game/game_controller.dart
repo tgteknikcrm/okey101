@@ -382,10 +382,8 @@ class GameController extends Notifier<GameSession?> {
     return total;
   }
 
-  MeldSolution? _bestOpening(GameSession session) {
-    final view = _humanView(session);
-    return BotUtils.finishingOpeningFor(view) ?? BotUtils.denseOpeningFor(view);
-  }
+  MeldSolution? _bestOpening(GameSession session) =>
+      BotUtils.bestOpening(_humanView(session));
 
   /// Guesses whether the selected tiles are a run, a set or a pair. The engine
   /// still validates; this only picks which validation to ask for.
