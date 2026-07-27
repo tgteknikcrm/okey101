@@ -39,8 +39,9 @@ abstract final class BoardLayout {
   /// legal meld is guaranteed to fit on a single row.
   static const int columnsPerHalf = 13;
 
-  /// Columns in the pairs panel. Four means two pairs to a row.
-  static const int pairColumns = 4;
+  /// Columns in the pairs panel. Two means one pair to a row, which keeps the
+  /// panel a narrow strip down the edge instead of a second table.
+  static const int pairColumns = 2;
 
   /// Gap between two melds sharing a row, in cells.
   static const int gapCells = 1;
@@ -118,7 +119,7 @@ abstract final class BoardLayout {
     return placements;
   }
 
-  /// Pairs go on their own panel: two tiles each, two pairs to a row.
+  /// Pairs go on their own panel: two tiles each, [pairColumns] / 2 to a row.
   static List<BoardPlacement> placePairs(List<Meld> melds) {
     final placements = <BoardPlacement>[];
     var index = 0;

@@ -239,8 +239,10 @@ void main() {
 
   testWidgets('every action button is reachable without scrolling',
       (tester) async {
-    // Six stacked buttons in a 240-pixel rail only fit once the padded tap
-    // target stops flooring each one at 48.
+    // The actions are a strip directly above the rack: they act on the tiles in
+    // it, so they belong beside them. That puts the whole row on one line, and
+    // what can go wrong is a button running off the side of an 844 pixel phone
+    // rather than off the bottom of a rail.
     tester.view.physicalSize = const Size(844, 390);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -256,10 +258,12 @@ void main() {
     );
     final l10n = await pumpGame(tester, state);
 
-    // The rail occupies the band above the rack, so that is the real fold -
-    // measuring against the full screen height would pass even when the last
-    // two buttons have been scrolled out of the rail.
-    final railBottom = tester.getRect(find.byType(RackWidget)).top;
+    // The strip sits between the table and the rack, so the rack's top edge is
+    // the real fold: measuring against the screen height would pass even with a
+    // button hidden behind the rack.
+    final rackTop = tester.getRect(find.byType(RackWidget)).top;
+    final screen = tester.view.physicalSize.width / tester.view.devicePixelRatio;
+    final bar = find.byType(Wrap).first;
 
     for (final label in <String>[
       l10n.gameOpenAction,
@@ -269,15 +273,103 @@ void main() {
       l10n.gameSort,
       l10n.commonUndo,
     ]) {
-      final finder = find.text(label);
-      expect(finder, findsWidgets, reason: '$label is missing');
-      final rect = tester.getRect(finder.first);
+      // Scoped to the strip: "Iskarta" also labels the player's own discard
+      // pile out on the table, and an unscoped finder measures that instead.
+      final finder = find.descendant(of: bar, matching: find.text(label));
+      expect(finder, findsOneWidget, reason: '$label is missing');
+      final rect = tester.getRect(finder);
       expect(
         rect.bottom,
-        lessThanOrEqualTo(railBottom),
-        reason: '$label ends at ${rect.bottom}, past the rail at $railBottom',
+        lessThanOrEqualTo(rackTop),
+        reason: '$label ends at ${rect.bottom}, below the rack top at $rackTop',
       );
       expect(rect.top, greaterThanOrEqualTo(0.0), reason: '$label is above');
+      expect(rect.left, greaterThanOrEqualTo(0.0), reason: '$label is off left');
+      expect(
+        rect.right,
+        lessThanOrEqualTo(screen),
+        reason: '$label ends at ${rect.right}, past the screen at $screen',
+      );
+    }
+  });
+
+  testWidgets('the deck column fits between the table and the rack',
+      (tester) async {
+    // It scrolls, which is the safety net on a tiny viewport - and also the
+    // trap: a slot pushed past the fold is still laid out, just invisible. On
+    // the size the game is actually played at, everything has to be on screen.
+    tester.view.physicalSize = const Size(844, 390);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final state = buildState(
+      indicator: indicator,
+      hands: buildHands(
+        indicator: indicator,
+        okey: okeyIdentity,
+        cores: [open101, const <Tile>[], const <Tile>[], const <Tile>[]],
+        sizes: const [22, 21, 21, 21],
+      ),
+    );
+    final l10n = await pumpGame(tester, state);
+
+    final rackTop = tester.getRect(find.byType(RackWidget)).top;
+    final deck = find.text(l10n.gameRemainingTiles(state.drawPile.length));
+    expect(deck, findsOneWidget);
+    final deckRect = tester.getRect(deck);
+    expect(deckRect.bottom, lessThanOrEqualTo(rackTop));
+
+    // The player's own discard pile is the last thing in the column and the
+    // first to be pushed out of sight.
+    final own = find.text(l10n.gameDiscardPile);
+    expect(own, findsNWidgets(2), reason: 'the table slot and the button');
+    for (final element in own.evaluate()) {
+      final rect = tester.getRect(find.byWidget(element.widget));
+      expect(
+        rect.bottom,
+        lessThanOrEqualTo(rackTop),
+        reason: 'a discard label ends at ${rect.bottom}, past $rackTop',
+      );
+    }
+  });
+
+  testWidgets('the draw pile is fully tappable on a short landscape phone',
+      (tester) async {
+    // 640x360 is a 360x640 handset rotated, and 844x340 is a 390-tall one with
+    // the browser toolbar showing. The deck used to live in a scroll view with
+    // two other slots; on anything shorter than 390 the column overflowed and
+    // the deck was clipped to a sliver, with no scrollbar to say so. Tapping it
+    // did nothing, which is exactly the complaint.
+    for (final size in const <Size>[Size(640, 360), Size(844, 340)]) {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      final state = buildState(
+        indicator: indicator,
+        hands: buildHands(
+          indicator: indicator,
+          okey: okeyIdentity,
+          cores: [tooLow, const <Tile>[], const <Tile>[], const <Tile>[]],
+        ),
+        phase: TurnPhase.awaitingDraw,
+      );
+      final l10n = await pumpGame(tester, state);
+
+      final before = state.drawPile.length;
+      final pile = find.ancestor(
+        of: find.text(l10n.gameRemainingTiles(before)),
+        matching: find.byType(GestureDetector),
+      );
+      expect(pile, findsWidgets, reason: 'no draw pile at $size');
+      await tester.tap(pile.first, warnIfMissed: false);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(l10n.gameRemainingTiles(before - 1)),
+        findsOneWidget,
+        reason: 'tapping the deck drew nothing at $size',
+      );
     }
   });
 

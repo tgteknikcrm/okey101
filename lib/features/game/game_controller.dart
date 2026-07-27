@@ -48,6 +48,10 @@ class GameController extends Notifier<GameSession?> {
 
   @override
   GameSession? build() {
+    // Reset, not just declare: NotifierProvider is not auto-dispose and
+    // Riverpod keeps the Notifier instance across rebuilds, so a one-way latch
+    // would leave the board permanently dead after a single invalidate.
+    _disposed = false;
     ref.onDispose(() {
       _disposed = true;
       _generation++;
@@ -635,9 +639,21 @@ class GameController extends Notifier<GameSession?> {
           session.rackSlots,
           next.players[session.humanSeat].hand,
         );
+        // Selection survives the move, minus whatever the move consumed.
+        // Rebuilding the session without it silently deselected everything on
+        // every single action - which is why the discard button had to clear
+        // the selection by hand, and why working several tiles onto the table
+        // in a row felt like the rack was fighting you.
+        final stillHeld = <int>{
+          for (final tile in next.players[session.humanSeat].hand) tile.id,
+        };
         state = GameSession(
           state: next,
           rackSlots: rack,
+          selection: <int>{
+            for (final id in session.selection)
+              if (stillHeld.contains(id)) id,
+          },
           pendingMelds: action is OpenWithMelds
               ? const <MeldProposal>[]
               : session.pendingMelds,
@@ -663,19 +679,37 @@ class GameController extends Notifier<GameSession?> {
     final brains = _brainsFor(settings.difficulty);
 
     state = state?.copyWith(botThinking: true);
+    // botThinking gates isHumanTurn, which gates the draw pile, the rack and
+    // every button. A single exit that forgets to clear it deadlocks the whole
+    // screen, so no exit is allowed to forget: finally does it.
+    try {
+      await _botLoop(generation, brains, settings.fastMode);
+    } finally {
+      // Only the loop that still owns the turn may clear the flag: a stale
+      // generation clearing it would flicker the "thinking" indicator off
+      // under the loop that replaced it.
+      if (!_disposed && generation == _generation) {
+        state = state?.copyWith(botThinking: false);
+      }
+    }
+  }
+
+  Future<void> _botLoop(
+    int generation,
+    List<BotBrain> brains,
+    bool fastMode,
+  ) async {
     while (true) {
       if (_disposed || generation != _generation) return;
       final session = state;
       if (session == null) return;
       final game = session.state;
-      if (game.isHandOver ||
-          game.currentSeat == session.humanSeat) {
-        state = state?.copyWith(botThinking: false);
+      if (game.isHandOver || game.currentSeat == session.humanSeat) {
         return;
       }
 
       final firstOfTurn = game.phase == TurnPhase.awaitingDraw;
-      final delayMs = settings.fastMode
+      final delayMs = fastMode
           ? 0
           : firstOfTurn
               ? minThinkMs + _botRng.nextInt(maxThinkMs - minThinkMs)
@@ -699,6 +733,11 @@ class GameController extends Notifier<GameSession?> {
         // freezing the board.
         EngineErr() => _fallback(current.state),
       };
+      // Nothing legal left even for the fallback. Returning the state unchanged
+      // would put this loop in a permanent spin with botThinking held down -
+      // every control on the board disabled, for good. Stopping hands the
+      // player a board they can at least leave.
+      if (next == null) return;
       state = current.copyWith(
         state: next,
         rackSlots: RackLayout.reconcile(
@@ -719,7 +758,9 @@ class GameController extends Notifier<GameSession?> {
     }
   }
 
-  GameState _fallback(GameState game) {
+  /// A guaranteed-legal move for a bot that produced an illegal one, or null
+  /// when even that is refused.
+  GameState? _fallback(GameState game) {
     final action = game.phase == TurnPhase.awaitingDraw
         ? const GameAction.drawFromPile()
         : GameAction.discard(
@@ -731,7 +772,7 @@ class GameController extends Notifier<GameSession?> {
                 .id,
           );
     final result = GameEngine.apply(game, action);
-    return result is EngineOk ? result.state : game;
+    return result is EngineOk ? result.state : null;
   }
 
   List<BotBrain> _brainsFor(BotDifficulty difficulty) {

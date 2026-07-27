@@ -136,15 +136,13 @@ void main() {
   });
 
   group('BoardLayout.placePairs', () {
-    test('packs two pairs to a row', () {
+    test('stacks one pair to a row', () {
       final pairs = [pair(), pair(), pair(), pair(), pair()];
       final placements = BoardLayout.placePairs(pairs);
       expect(placements, hasLength(5));
-      expect((placements[0].row, placements[0].column), (0, 0));
-      expect((placements[1].row, placements[1].column), (0, 2));
-      expect((placements[2].row, placements[2].column), (1, 0));
-      expect((placements[3].row, placements[3].column), (1, 2));
-      expect((placements[4].row, placements[4].column), (2, 0));
+      for (var i = 0; i < placements.length; i++) {
+        expect((placements[i].row, placements[i].column), (i, 0));
+      }
     });
 
     test('an eleven-pair finish fits without overlapping', () {
@@ -158,7 +156,7 @@ void main() {
           expect(c, lessThan(BoardLayout.pairColumns));
         }
       }
-      expect(BoardLayout.rowsUsed(placements), 6);
+      expect(BoardLayout.rowsUsed(placements), 11);
     });
 
     test('runs and sets are left to the main board', () {

@@ -41,22 +41,11 @@ class RandomBot implements BotBrain {
         return GameAction.open(melds: opening.toProposals());
       }
     } else if (view.openedWithPairs) {
-      final solver = BotUtils.solverFor(view);
-      final pairs = solver.bestPairs(view.hand);
-      final onTable = view.table
-          .where((m) => m.ownerSeat == view.seat)
-          .length;
-      if (pairs.isNotEmpty &&
-          onTable + pairs.length >= view.ruleSet.pairsToFinish) {
-        final used = <int>{
-          for (final pair in pairs)
-            for (final tile in pair.tiles) tile.id,
-        };
-        if (used.length == view.hand.length) {
-          return GameAction.layPairs(
-            pairs: pairs.map((p) => p.toProposal()).toList(),
-          );
-        }
+      final more = BotUtils.pairsToLayAfterOpening(view);
+      if (more != null) {
+        return GameAction.layPairs(
+          pairs: more.map((p) => p.toProposal()).toList(),
+        );
       }
     } else if (rng.nextBool(0.6)) {
       final additions = BotUtils.tableAdditions(view);

@@ -6,6 +6,7 @@ import 'package:okey101/domain/ai/medium_bot.dart';
 import 'package:okey101/domain/ai/random_bot.dart';
 import 'package:okey101/domain/engine/match_runner.dart';
 import 'package:okey101/domain/engine/state_invariants.dart';
+import 'package:okey101/domain/models/game_action.dart';
 import 'package:okey101/domain/models/game_state.dart';
 import 'package:okey101/domain/models/rule_set.dart';
 import 'package:okey101/domain/models/scoring.dart';
@@ -206,6 +207,39 @@ void main() {
       expect(counts[ScoreRowKey.normal], greaterThan(50));
       expect(counts[ScoreRowKey.head], greaterThan(0));
       expect(counts[ScoreRowKey.exhausted], greaterThan(0));
+    });
+
+    test('bots really do take the pairs road', () {
+      // This was zero across ten thousand games. Five pairs are never dealt -
+      // a hand holds about two by chance - so a bot only ever gets there by
+      // committing to the road and collecting them over eight or ten turns.
+      // Counting lay-downs rather than finishes is the point: a pairs hand that
+      // runs the deck out scores as "exhausted" and hides the whole road.
+      var layDowns = 0;
+      var hands = 0;
+      for (var seed = 1; seed <= 20; seed++) {
+        final outcome = MatchRunner.run(
+          ruleSet: RulePresets.standard,
+          seed: seed,
+          brains: <BotBrain>[
+            const HardBot(),
+            const MediumBot(),
+            const HardBot(),
+            const MediumBot(),
+          ],
+          checkInvariants: false,
+        );
+        hands += outcome.hands.length;
+        for (final action in outcome.canonicalActions) {
+          if (action is LayPairs) layDowns++;
+        }
+      }
+      expect(hands, greaterThan(100));
+      expect(
+        layDowns,
+        greaterThan(20),
+        reason: 'the pairs road is unreachable again',
+      );
     });
   });
 }

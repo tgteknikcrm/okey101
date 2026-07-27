@@ -172,10 +172,18 @@ class MeldSolver {
           .number
           .compareTo(semantics.fixedIdentity(a).number),
     );
-    final wildBudget = wilds.length < _rules.maxJokersPerMeld * singles.length
-        ? wilds.length
-        : singles.length;
-    for (var i = 0; i < wildBudget && i < singles.length; i++) {
+    // A pair is two tiles, so at most one of them can ever be a wild, and a
+    // rule set that bans jokers outright bans this pairing with them. The old
+    // expression multiplied by maxJokersPerMeld, which at zero made the budget
+    // singles.length and then indexed wilds past its end - reachable from the
+    // Settings spinner, whose minimum is 0.
+    // Written out rather than calling min: lib/domain is pure Dart and
+    // purity_test bans the whole maths library by name, so that RandomSource
+    // stays the only source of randomness in the game.
+    final wildBudget = _rules.maxJokersPerMeld < 1
+        ? 0
+        : (wilds.length < singles.length ? wilds.length : singles.length);
+    for (var i = 0; i < wildBudget; i++) {
       final identity = semantics.fixedIdentity(singles[i]);
       pairs.add(
         SolvedMeld(

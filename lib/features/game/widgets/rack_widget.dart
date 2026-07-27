@@ -23,7 +23,6 @@ class RackWidget extends StatefulWidget {
     super.key,
     this.colorblind = false,
     this.glyphFor,
-    this.onDragOut,
     this.enabled = true,
     this.animate = true,
     this.maxHeight,
@@ -39,8 +38,6 @@ class RackWidget extends StatefulWidget {
   final ValueChanged<List<int?>> onLayoutChanged;
   final ValueChanged<int> onTapTile;
 
-  /// A tile dragged clear of the rack. The screen decides what that means.
-  final void Function(int tileId, Offset globalPosition)? onDragOut;
 
   final bool colorblind;
   final String Function(TileColor)? glyphFor;
@@ -77,6 +74,18 @@ class _RackWidgetState extends State<RackWidget> {
   /// stream it can be off the rack entirely - which used to lose the drag.
   Offset? _downPosition;
   int? _pendingSlot;
+
+  /// The finger that owns the drag, tracked from the raw pointer stream.
+  ///
+  /// One PanGestureRecognizer covers the whole rack, and it only reports
+  /// onPanEnd when the LAST finger lifts. A thumb resting on the rack - the
+  /// normal way to hold a phone in landscape, where the rack is the band under
+  /// your hands - therefore leaves the lifted finger's tile stuck in mid-air,
+  /// following the resting thumb, until every finger comes off. Raw pointer
+  /// events arrive per finger and before the arena resolves, which is the only
+  /// place that can tell the two apart.
+  int? _dragPointer;
+  bool _extraPointer = false;
 
   List<int?> get _slots => _working ?? widget.slots;
 
@@ -164,33 +173,43 @@ class _RackWidgetState extends State<RackWidget> {
                   ),
                 ],
               ),
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTapUp: widget.enabled
-                    ? (details) => _handleTap(details.localPosition, cell)
-                    : null,
-                onPanDown: widget.enabled
-                    ? (details) => _handlePanDown(details, cell)
-                    : null,
-                onPanStart: widget.enabled
-                    ? (details) => _handlePanStart(details, cell)
-                    : null,
-                onPanUpdate: widget.enabled
-                    ? (details) => _handlePanUpdate(details, cell)
-                    : null,
-                onPanEnd:
-                    widget.enabled ? (details) => _handlePanEnd() : null,
-                onPanCancel: widget.enabled ? _cancelDrag : null,
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    for (var slot = 0; slot < kRackSlots; slot++)
-                      _slotFrame(slot, cell),
-                    for (var slot = 0; slot < kRackSlots; slot++)
-                      if (_slots[slot] != null && slot != _draggingSlot)
-                        _positionedTile(slot, cell),
-                    if (_draggingSlot != null) _draggedTile(cell),
-                  ],
+              child: Listener(
+                onPointerDown: _handlePointerDown,
+                onPointerUp: _handlePointerRelease,
+                onPointerCancel: _handlePointerRelease,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTapUp: (details) {
+                    if (widget.enabled) _handleTap(details.localPosition, cell);
+                  },
+                  onPanDown: (details) {
+                    if (widget.enabled) _handlePanDown(details, cell);
+                  },
+                  onPanStart: (details) {
+                    if (widget.enabled) _handlePanStart(details, cell);
+                  },
+                  onPanUpdate: (details) {
+                    if (widget.enabled) _handlePanUpdate(details, cell);
+                  },
+                  // Never null, even when the rack is disabled. A
+                  // GestureDetector drops the recogniser entirely once every
+                  // pan callback is null, and disposing it mid-drag clears its
+                  // tracked pointers WITHOUT calling either terminal callback -
+                  // so a tile caught by the turn changing was stranded on
+                  // screen for good.
+                  onPanEnd: (_) => _handlePanEnd(),
+                  onPanCancel: _cancelDrag,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      for (var slot = 0; slot < kRackSlots; slot++)
+                        _slotFrame(slot, cell),
+                      for (var slot = 0; slot < kRackSlots; slot++)
+                        if (_slots[slot] != null && slot != _draggingSlot)
+                          _positionedTile(slot, cell),
+                      if (_draggingSlot != null) _draggedTile(cell),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -240,6 +259,7 @@ class _RackWidgetState extends State<RackWidget> {
     final tile = widget.tilesById[id];
     if (tile == null) return const SizedBox.shrink();
     return Positioned(
+      key: const ValueKey<String>('dragged'),
       left: _dragPosition.dx - _grabOffset.dx,
       top: _dragPosition.dy - _grabOffset.dy,
       width: cell.width,
@@ -278,6 +298,28 @@ class _RackWidgetState extends State<RackWidget> {
     widget.onTapTile(id);
   }
 
+  void _handlePointerDown(PointerDownEvent event) {
+    if (_dragPointer == null) {
+      _dragPointer = event.pointer;
+      _extraPointer = false;
+      return;
+    }
+    // A second finger landed. Freeze the drag and commit what it has done so
+    // far, rather than letting the tile follow whichever finger the recogniser
+    // happens to average out to.
+    _extraPointer = true;
+    if (_draggingSlot != null) _handlePanEnd();
+  }
+
+  void _handlePointerRelease(PointerEvent event) {
+    if (event.pointer != _dragPointer) return;
+    _dragPointer = null;
+    _extraPointer = false;
+    // The finger that started the drag is up, so the drag is over - whatever
+    // else is still touching the rack.
+    if (_draggingSlot != null) _handlePanEnd();
+  }
+
   void _handlePanDown(DragDownDetails details, Size cell) {
     final slot = _slotAt(details.localPosition, cell);
     _downPosition = details.localPosition;
@@ -288,6 +330,7 @@ class _RackWidgetState extends State<RackWidget> {
   }
 
   void _handlePanStart(DragStartDetails details, Size cell) {
+    if (_extraPointer) return;
     final slot = _pendingSlot;
     if (slot == null || _slots[slot] == null) return;
     setState(() {
@@ -302,7 +345,7 @@ class _RackWidgetState extends State<RackWidget> {
   }
 
   void _handlePanUpdate(DragUpdateDetails details, Size cell) {
-    if (_draggingSlot == null) return;
+    if (_extraPointer || _draggingSlot == null) return;
     _updateDrag(details.localPosition, cell);
   }
 
@@ -327,9 +370,8 @@ class _RackWidgetState extends State<RackWidget> {
       return;
     }
 
-    // Dragged clear of the rack: the screen decides what that means.
-    final draggedOut = _dragPosition.dy < -8;
     final tileId = working[slot];
+    final movedFar = _movedFar;
     setState(() {
       _draggingSlot = null;
       _working = null;
@@ -337,12 +379,14 @@ class _RackWidgetState extends State<RackWidget> {
       _downPosition = null;
     });
 
-    if (draggedOut && tileId != null && widget.onDragOut != null) {
-      final box = context.findRenderObject()! as RenderBox;
-      widget.onDragOut!(tileId, box.localToGlobal(_dragPosition));
+    if (movedFar) {
+      widget.onLayoutChanged(working);
       return;
     }
-    if (_movedFar) widget.onLayoutChanged(working);
+    // The pan won the arena but the finger barely moved, so the player meant a
+    // tap. Without this the touch is swallowed: the tap recogniser already lost
+    // and nothing at all happens, which reads as the rack ignoring you.
+    if (tileId != null) widget.onTapTile(tileId);
   }
 
   void _cancelDrag() {

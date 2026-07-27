@@ -33,10 +33,18 @@ abstract final class DiscardStrategy {
     /// points of deadwood - a player who never opens pays a flat 202 whenever
     /// anybody goes out - so while the open is still live this wins.
     bool openingFocus = false,
+
+    /// The hand is being played for pairs.
+    ///
+    /// Overrides the opening focus: on the pairs road runs and sets are worth
+    /// nothing at all, so the usual partition has no say in what to throw.
+    bool pairsFocus = false,
   }) {
     final semantics = BotUtils.semanticsOf(view);
     final legal = BotUtils.discardableTiles(view);
     final legalIds = legal.map((t) => t.id).toSet();
+
+    if (pairsFocus) return _choosePairsRoad(view, legal, semantics, seen);
 
     // Throw from what the relevant partition does not already use.
     final keepFrom = openingFocus
@@ -61,6 +69,55 @@ abstract final class DiscardStrategy {
         deadTiles: evaluation.deadTiles,
         openingFocus: openingFocus,
       );
+      if (score > bestScore) {
+        bestScore = score;
+        best = tile;
+      }
+    }
+    return best ?? legal.first;
+  }
+
+  /// On the pairs road a tile is only ever one of three things: half of a pair,
+  /// a single that might still find its twin, or a single that never will.
+  ///
+  /// Nothing else matters - not runs, not sets, not the face value the 101
+  /// threshold counts - so the ordering really is that simple, and it is what
+  /// turns a two-pair deal into a five-pair lay-down eight turns later.
+  static Tile _choosePairsRoad(
+    PlayerView view,
+    List<Tile> legal,
+    TileSemantics semantics,
+    SeenTiles seen,
+  ) {
+    // How many of each identity the rack holds, so a tile can tell whether it
+    // is already half of a pair.
+    final held = <int, int>{};
+    for (final tile in view.hand) {
+      if (semantics.isWild(tile)) continue;
+      held.update(
+        semantics.fixedIdentity(tile).index,
+        (n) => n + 1,
+        ifAbsent: () => 1,
+      );
+    }
+
+    Tile? best;
+    var bestScore = double.negativeInfinity;
+    for (final tile in legal) {
+      // The okey stands in for any tile, so on this road it is the last thing
+      // to leave the rack.
+      if (semantics.isWild(tile)) continue;
+      final identity = semantics.fixedIdentity(tile);
+      final copies = held[identity.index] ?? 0;
+
+      // Breaking a pair to throw one of its halves undoes a turn's work.
+      var score = copies >= 2 ? -100.0 : 0.0;
+      // A single whose twin is still out there is what the next draw is for; one
+      // whose twins are all accounted for is dead weight.
+      score += (1 - seen.availability(identity)) * 20;
+      // Nothing to choose between two equally hopeless singles except the
+      // deadwood they would cost if the hand never goes out.
+      score += identity.number * 0.5;
       if (score > bestScore) {
         bestScore = score;
         best = tile;

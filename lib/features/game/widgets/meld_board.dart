@@ -14,6 +14,7 @@ class _GridPainter extends CustomPainter {
     required this.rowPitch,
     required this.rows,
     required this.halves,
+    required this.columns,
     this.halfGap = 0,
   });
 
@@ -21,18 +22,24 @@ class _GridPainter extends CustomPainter {
   final double rowPitch;
   final int rows;
   final int halves;
+
+  /// Columns in ONE half. Taken as a parameter rather than read off
+  /// BoardLayout: the pairs panel is two columns wide, and painting the main
+  /// board's thirteen there spilled empty cells clean across the seat rail
+  /// beside it. A CustomPaint does not clip, so nothing caught it.
+  final int columns;
   final double halfGap;
 
   @override
   void paint(Canvas canvas, Size size) {
     final slot = Paint()..color = const Color(0x14FBF5E6);
     final radius = Radius.circular(cell.width * 0.14);
-    final halfWidth = cell.width * BoardLayout.columnsPerHalf;
+    final halfWidth = cell.width * columns;
 
     for (var half = 0; half < halves; half++) {
       final originX = half * (halfWidth + halfGap);
       for (var row = 0; row < rows; row++) {
-        for (var column = 0; column < BoardLayout.columnsPerHalf; column++) {
+        for (var column = 0; column < columns; column++) {
           final rect = Rect.fromLTWH(
             originX + column * cell.width + 1,
             row * rowPitch + 1,
@@ -60,6 +67,7 @@ class _GridPainter extends CustomPainter {
       old.cell != cell ||
       old.rows != rows ||
       old.halves != halves ||
+      old.columns != columns ||
       old.rowPitch != rowPitch;
 }
 
@@ -158,6 +166,7 @@ class MeldBoard extends StatelessWidget {
                     rowPitch: rowPitch,
                     rows: rows,
                     halves: halves,
+                    columns: BoardLayout.columnsPerHalf,
                     halfGap: _halfGap,
                   ),
                 ),
@@ -369,6 +378,7 @@ class PairsBoard extends StatelessWidget {
                                 rowPitch: rowPitch,
                                 rows: gridRows,
                                 halves: 1,
+                                columns: BoardLayout.pairColumns,
                               ),
                             ),
                           ),

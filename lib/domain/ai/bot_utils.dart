@@ -182,6 +182,114 @@ abstract final class BotUtils {
     return pairs;
   }
 
+  /// How a hand stands on the pairs road.
+  ///
+  /// The pairs road is not a move, it is a plan: a hand reaches five pairs by
+  /// spending eight or ten turns collecting them, never by being dealt them.
+  /// Bots are stateless - a brain is handed a view and nothing else - so the
+  /// plan has to be re-derivable from the rack on every turn. Pair count
+  /// is exactly that. It only grows while the bot plays this way, so a hand that
+  /// commits on one turn still reads as committed on the next, and the whole
+  /// turn - what to take, what to throw, when to lay - can key off it.
+  ///
+  /// [bestPoints] is what the normal road is worth right now; the two roads are
+  /// mutually exclusive, so committing to one is a judgement about the other.
+  static PairsRoad pairsRoad(PlayerView view, {required int bestPoints}) {
+    final pairs = solverFor(view).bestPairs(view.hand);
+    if (view.hasOpened) {
+      return PairsRoad(pairs: pairs, committed: view.openedWithPairs);
+    }
+
+    final need = view.ruleSet.minPairsToOpen;
+    final shortfall = view.ruleSet.openThresholdFor(view.openedCount) -
+        bestPoints;
+
+    // Enough pairs to go out on the spot beats anything the normal road could
+    // still do, so it never has to be weighed against it.
+    if (pairs.length >= view.ruleSet.pairsToFinish) {
+      return PairsRoad(pairs: pairs, committed: true);
+    }
+    // Once the normal open is actually available it is taken: it comes with a
+    // rack that is already melded, where the pairs road still has to find two
+    // more pairs from a deck that is running down.
+    if (shortfall <= 0) return PairsRoad(pairs: pairs, committed: false);
+
+    // A dealt hand holds about two pairs by chance, so three is noise and only
+    // means something when the normal road is nowhere. Four is a genuinely
+    // pair-skewed rack, and five can already be laid.
+    final committed = pairs.length >= need ||
+        (pairs.length >= need - 1 && shortfall >= 20) ||
+        (pairs.length >= need - 2 && shortfall >= 55);
+    return PairsRoad(pairs: pairs, committed: committed);
+  }
+
+  /// The pairs a player who has already opened on the pairs road should lay
+  /// this turn, or null when there is nothing to lay.
+  ///
+  /// A pairs hand goes out at eleven and the only way to get there is to lay
+  /// them as they arrive. Every bot used to demand the whole jump from five to
+  /// eleven in a single move, which happened exactly zero times in 38,000
+  /// simulated hands - so opening on pairs was a self-inflicted loss. The
+  /// engine has always allowed the incremental lay; nothing used it.
+  static List<SolvedMeld>? pairsToLayAfterOpening(PlayerView view) {
+    if (!view.openedWithPairs) return null;
+    final pairs = solverFor(view).bestPairs(view.hand);
+    if (pairs.isEmpty) return null;
+
+    final onTable = view.table
+        .where((m) => m.ownerSeat == view.seat && m.kind == MeldKind.pair)
+        .length;
+    final used = <int>{
+      for (final pair in pairs)
+        for (final tile in pair.tiles) tile.id,
+    };
+
+    // Going out: the whole rack is pairs and the count reaches eleven, so the
+    // turn ends with nothing discarded at all.
+    if (used.length == view.hand.length &&
+        onTable + pairs.length >= view.ruleSet.pairsToFinish) {
+      return pairs;
+    }
+
+    // Otherwise lay every pair that still leaves a tile to throw. The engine
+    // only counts to eleven when the rack empties, so there is no ceiling here
+    // beyond keeping the turn legal.
+    final laid = <SolvedMeld>[];
+    final spent = <int>{};
+    for (final pair in pairs) {
+      final candidate = <int>{...spent, for (final tile in pair.tiles) tile.id};
+      final leftovers = <Tile>[
+        for (final tile in view.hand)
+          if (!candidate.contains(tile.id)) tile,
+      ];
+      if (leftovers.isEmpty || !leavesALegalDiscard(view, leftovers)) break;
+      laid.add(pair);
+      spent
+        ..clear()
+        ..addAll(candidate);
+    }
+    return laid.isEmpty ? null : laid;
+  }
+
+  /// True when [candidate] would pair with a tile on the rack that is not
+  /// already half of a pair.
+  ///
+  /// Cheap on purpose - no solver - because it is the guard that decides
+  /// whether the expensive [pairsRoad] question is worth asking at all.
+  static bool completesAPair(PlayerView view, Tile candidate) {
+    final semantics = semanticsOf(view);
+    if (semantics.isWild(candidate)) return true;
+    final identity = semantics.fixedIdentity(candidate);
+    var copies = 0;
+    for (final tile in view.hand) {
+      if (semantics.isWild(tile)) continue;
+      if (semantics.fixedIdentity(tile) == identity) copies++;
+    }
+    // Odd, not "exactly one": a third copy of the indicator's identity, which
+    // the two false jokers also carry, starts a second pair.
+    return copies.isOdd;
+  }
+
   /// Every legal way to work a hand tile onto a table meld.
   ///
   /// Returned in table order then hand order, with no preference expressed:
@@ -251,4 +359,19 @@ abstract final class BotUtils {
 
   /// The seat that receives this player's discards.
   static int rightNeighbourSeat(PlayerView view) => seatToRightOf(view.seat);
+}
+
+/// A hand's standing on the pairs road, as [BotUtils.pairsRoad] reads it.
+class PairsRoad {
+  const PairsRoad({required this.pairs, required this.committed});
+
+  /// The best set of pairs the hand currently holds.
+  final List<SolvedMeld> pairs;
+
+  /// Whether this hand should be played for pairs from here on: drawing to
+  /// complete them, throwing whatever cannot become one, and laying them down
+  /// as soon as there are enough.
+  final bool committed;
+
+  int get count => pairs.length;
 }

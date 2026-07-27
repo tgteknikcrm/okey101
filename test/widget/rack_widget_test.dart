@@ -12,12 +12,7 @@ void main() {
 
   final hand = <Tile>[red(3), red(4), red(5), blue(9), yellow(12)];
 
-  Future<
-      ({
-        List<int?>? committed,
-        List<int> tapped,
-        List<int> draggedOut,
-      })> pumpRack(
+  Future<({List<int?>? committed, List<int> tapped})> pumpRack(
     WidgetTester tester, {
     required Future<void> Function(WidgetTester tester, Rect rackRect) act,
     List<int?>? slots,
@@ -25,7 +20,6 @@ void main() {
   }) async {
     List<int?>? committed;
     final tapped = <int>[];
-    final draggedOut = <int>[];
 
     await tester.pumpWidget(
       MaterialApp(
@@ -44,7 +38,6 @@ void main() {
                 animate: false,
                 onLayoutChanged: (value) => committed = value,
                 onTapTile: tapped.add,
-                onDragOut: (id, _) => draggedOut.add(id),
               ),
             ),
           ),
@@ -56,7 +49,7 @@ void main() {
     final rect = tester.getRect(find.byType(RackWidget));
     await act(tester, rect);
     await tester.pumpAndSettle();
-    return (committed: committed, tapped: tapped, draggedOut: draggedOut);
+    return (committed: committed, tapped: tapped);
   }
 
   /// Centre of a rack slot in global coordinates.
@@ -110,7 +103,11 @@ void main() {
     expect(committed.length, kRackSlots);
   });
 
-  testWidgets('a tap that does not move commits nothing', (tester) async {
+  testWidgets('a pan that barely moves counts as a tap', (tester) async {
+    // The pan recogniser wins the arena as soon as the finger moves at all, so
+    // the tap recogniser has already lost by the time the finger lifts. Without
+    // the fallback the touch is swallowed whole and the rack looks unresponsive
+    // - the single most reported complaint about the old rack.
     final result = await pumpRack(
       tester,
       act: (tester, rack) async {
@@ -122,10 +119,14 @@ void main() {
       },
     );
     expect(result.committed, isNull);
+    expect(result.tapped, [red(5).id]);
   });
 
-  testWidgets('dragging a tile clear of the rack reports a drag-out',
+  testWidgets('dragging a tile clear of the rack never discards it',
       (tester) async {
+    // Releasing above the rack used to discard, which fired by accident every
+    // time a tile was moved from the bottom row to the top one. It now just
+    // rearranges: discarding is the button and nothing else.
     final result = await pumpRack(
       tester,
       act: (tester, rack) async {
@@ -136,7 +137,97 @@ void main() {
         await gesture.up();
       },
     );
-    expect(result.draggedOut, [red(3).id]);
+    final committed = result.committed;
+    expect(committed, isNotNull);
+    expect(
+      committed!.whereType<int>().toSet(),
+      hand.map((t) => t.id).toSet(),
+      reason: 'no tile may leave the rack by being dragged off it',
+    );
+  });
+
+  testWidgets('a second finger cannot strand a tile in mid-air',
+      (tester) async {
+    // One pan recogniser covers the whole rack and only reports onPanEnd when
+    // the LAST finger lifts. The rack is the band your hands rest on, so a
+    // thumb touching it while the other finger drags used to leave the tile
+    // stuck to the screen, following the thumb, until every finger came off.
+    final result = await pumpRack(
+      tester,
+      act: (tester, rack) async {
+        final drag = await tester.startGesture(slotCentre(rack, 0), pointer: 1);
+        await tester.pump(const Duration(milliseconds: 20));
+        await drag.moveTo(slotCentre(rack, 3));
+        await tester.pump(const Duration(milliseconds: 20));
+        final resting =
+            await tester.startGesture(slotCentre(rack, 12), pointer: 2);
+        await tester.pump(const Duration(milliseconds: 20));
+        await drag.up();
+        await tester.pump(const Duration(milliseconds: 20));
+
+        expect(
+          find.byKey(const ValueKey<String>('dragged')),
+          findsNothing,
+          reason: 'the tile must not stay stuck to the screen',
+        );
+        await resting.up();
+      },
+    );
+    expect(result.committed, isNotNull, reason: 'the drag should have landed');
+  });
+
+  testWidgets('a rack disabled mid-drag still releases the tile',
+      (tester) async {
+    // A GestureDetector drops its recogniser once every pan callback is null,
+    // and disposing one mid-drag clears its tracked pointers without calling
+    // either terminal callback - so the tile was stranded for good when the
+    // turn ended under the player's finger.
+    late StateSetter setEnabled;
+    var enabled = true;
+    List<int?>? committed;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              setEnabled = setState;
+              return Align(
+                alignment: Alignment.bottomCenter,
+                child: SizedBox(
+                  width: 390,
+                  child: RackWidget(
+                    slots: RackLayout.fromTiles(hand),
+                    tilesById: {for (final tile in hand) tile.id: tile},
+                    selection: const <int>{},
+                    okey: okey,
+                    indicator: indicator,
+                    enabled: enabled,
+                    animate: false,
+                    onLayoutChanged: (value) => committed = value,
+                    onTapTile: (_) {},
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final rack = tester.getRect(find.byType(RackWidget));
+    final gesture = await tester.startGesture(slotCentre(rack, 0));
+    await tester.pump(const Duration(milliseconds: 20));
+    await gesture.moveTo(slotCentre(rack, 3));
+    await tester.pump(const Duration(milliseconds: 20));
+    setEnabled(() => enabled = false);
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey<String>('dragged')), findsNothing);
+    expect(committed, isNotNull);
   });
 
   testWidgets('a disabled rack ignores taps and drags', (tester) async {

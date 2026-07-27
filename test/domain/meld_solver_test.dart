@@ -233,6 +233,23 @@ void main() {
       expect(pairs.single.tiles.toSet(), {falseJoker0, falseJoker1});
     });
 
+    test('a rule set that bans jokers does not crash on a wild', () {
+      // maxJokersPerMeld: 0 made the wild budget singles.length instead of
+      // zero, and the loop then indexed wilds past its end. The Settings
+      // spinner lets a player pick 0, so this was a live RangeError.
+      final noJokers = MeldSolver(
+        TileSemantics.fromIndicator(
+          const TileIdentity(color: TileColor.black, number: 1),
+          RulePresets.standard.copyWith(maxJokersPerMeld: 0),
+        ),
+      );
+      final hand = [red(3), red(3, 1), yellow(12), blue(7), okey];
+      expect(() => noJokers.bestPairs(hand), returnsNormally);
+      final pairs = noJokers.bestPairs(hand);
+      expect(pairs.length, 1, reason: 'the wild may not complete a pair');
+      expect(pairs.single.tiles.contains(okey), isFalse);
+    });
+
     test('two okeys do not pair with each other', () {
       final pairs = solver.bestPairs([okey, okeyCopy]);
       expect(pairs, isEmpty);

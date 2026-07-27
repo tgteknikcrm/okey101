@@ -44,6 +44,15 @@ class EasyBot implements BotBrain {
       if (opening != null) {
         return GameAction.open(melds: opening.toProposals());
       }
+      // It never plays FOR pairs - that takes a plan, and this bot has none -
+      // but it does take the road when the rack hands it one, which is what a
+      // beginner who has just counted five duplicates does.
+      final pairs = BotUtils.pairsOpeningFor(view);
+      if (pairs != null && !rng.nextBool(mistakeRate)) {
+        return GameAction.layPairs(
+          pairs: pairs.map((p) => p.toProposal()).toList(),
+        );
+      }
     } else if (!view.openedWithPairs && view.hand.length > 1) {
       final additions = BotUtils.tableAdditions(view);
       if (additions.isNotEmpty) {

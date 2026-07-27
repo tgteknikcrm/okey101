@@ -38,6 +38,17 @@ class MediumBot implements BotBrain {
     if (view.drawPileCount == 0) return const GameAction.drawFromDiscard();
 
     final solver = BotUtils.solverFor(view);
+    // On the pairs road the twin of a tile already held is the whole point of
+    // drawing; the deadwood comparison below is about runs and sets and would
+    // pass it over.
+    if (!view.hasOpened && BotUtils.completesAPair(view, top)) {
+      final road = BotUtils.pairsRoad(
+        view,
+        bestPoints: solver.maximizePoints(view.hand).points,
+      );
+      if (road.committed) return const GameAction.drawFromDiscard();
+    }
+
     final without = solver.minimizeDeadwood(view.hand).deadwood;
     final with_ = solver.minimizeDeadwood([...view.hand, top]).deadwood;
     // Taking a tile also means giving up a blind draw, so it has to pay for
@@ -50,24 +61,31 @@ class MediumBot implements BotBrain {
   GameAction _play(PlayerView view, RandomSource rng) {
     final seen = SeenTiles.fromView(view);
     final evaluation = HandEvaluator.evaluate(view, seen: seen);
+    final road = BotUtils.pairsRoad(view, bestPoints: evaluation.bestPoints);
 
     if (!view.hasOpened) {
+      // Pairs first: the road only commits while the normal lay-down is out of
+      // reach, and by the time there are five of them the rack has been played
+      // for pairs for several turns and holds little else.
+      if (road.committed) {
+        final pairs = BotUtils.pairsOpeningFor(view);
+        if (pairs != null) {
+          return GameAction.layPairs(
+            pairs: pairs.map((p) => p.toProposal()).toList(),
+          );
+        }
+      }
       final opening = BotUtils.openingFor(view);
       if (opening != null) {
         return GameAction.open(melds: opening.toProposals());
       }
-      final pairs = BotUtils.pairsOpeningFor(view);
-      // Only take the pairs road when the normal one is clearly not coming.
-      if (pairs != null &&
-          pairs.length >= view.ruleSet.minPairsToOpen + 1 &&
-          evaluation.bestPoints < view.ruleSet.openThreshold - 30) {
+    } else if (view.openedWithPairs) {
+      final more = BotUtils.pairsToLayAfterOpening(view);
+      if (more != null) {
         return GameAction.layPairs(
-          pairs: pairs.map((p) => p.toProposal()).toList(),
+          pairs: more.map((p) => p.toProposal()).toList(),
         );
       }
-    } else if (view.openedWithPairs) {
-      final finishing = _pairsFinish(view);
-      if (finishing != null) return finishing;
     } else if (view.hand.length > 1) {
       final additions = BotUtils.tableAdditions(view);
       if (additions.isNotEmpty) {
@@ -88,6 +106,7 @@ class MediumBot implements BotBrain {
         evaluation: evaluation,
         seen: seen,
         defensiveness: 0.4,
+        pairsFocus: road.committed,
       ).id,
     );
   }
@@ -103,21 +122,4 @@ class MediumBot implements BotBrain {
     return GameAction.layMeld(meld: meld.toProposal());
   }
 
-  GameAction? _pairsFinish(PlayerView view) {
-    final pairs = BotUtils.solverFor(view).bestPairs(view.hand);
-    if (pairs.isEmpty) return null;
-    final onTable =
-        view.table.where((m) => m.ownerSeat == view.seat).length;
-    final used = <int>{
-      for (final pair in pairs)
-        for (final tile in pair.tiles) tile.id,
-    };
-    if (onTable + pairs.length >= view.ruleSet.pairsToFinish &&
-        used.length == view.hand.length) {
-      return GameAction.layPairs(
-        pairs: pairs.map((p) => p.toProposal()).toList(),
-      );
-    }
-    return null;
-  }
 }

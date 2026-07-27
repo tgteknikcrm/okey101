@@ -72,6 +72,17 @@ class HardBot implements BotBrain {
       return const GameAction.drawFromDiscard();
     }
 
+    // On the pairs road the only draw that matters is the twin of a tile the
+    // rack already holds. The deadwood arithmetic below is about runs and sets,
+    // and left to itself it throws that twin straight back.
+    if (!view.hasOpened && BotUtils.completesAPair(view, top)) {
+      final road = BotUtils.pairsRoad(
+        view,
+        bestPoints: solver.maximizePoints(view.hand).points,
+      );
+      if (road.committed) return const GameAction.drawFromDiscard();
+    }
+
     final without = solver.minimizeDeadwood(view.hand);
     final with_ = solver.minimizeDeadwood(withTop);
     final gain = without.deadwood - with_.deadwood;
@@ -95,28 +106,43 @@ class HardBot implements BotBrain {
   GameAction _play(PlayerView view, SeenTiles seen, RandomSource rng) {
     final evaluation = HandEvaluator.evaluate(view, seen: seen);
     final beliefs = OpponentModel.beliefs(view);
+    final road = BotUtils.pairsRoad(view, bestPoints: evaluation.bestPoints);
 
     if (!view.hasOpened) {
-      final action = _openingDecision(view, evaluation, beliefs);
+      final action = _openingDecision(view, road);
       if (action != null) return action;
     } else if (view.openedWithPairs) {
-      final finishing = _pairsFinish(view);
-      if (finishing != null) return finishing;
+      final more = BotUtils.pairsToLayAfterOpening(view);
+      if (more != null) {
+        return GameAction.layPairs(
+          pairs: more.map((p) => p.toProposal()).toList(),
+        );
+      }
     } else {
       final action = _afterOpening(view, evaluation);
       if (action != null) return action;
     }
 
     return GameAction.discard(
-      tileId: _discard(view, evaluation, seen, beliefs).id,
+      tileId: _discard(view, evaluation, seen, beliefs, road).id,
     );
   }
 
-  GameAction? _openingDecision(
-    PlayerView view,
-    HandEvaluation evaluation,
-    List<OpponentBelief> beliefs,
-  ) {
+  GameAction? _openingDecision(PlayerView view, PairsRoad road) {
+    // A hand that has spent the last eight turns collecting duplicates lays
+    // them the moment there are enough. This is checked first because by then
+    // the rack holds nothing else: pairsRoad only commits while the normal
+    // lay-down is out of reach, and the tiles it threw away to get here were
+    // exactly the ones a run or a set would have needed.
+    if (road.committed) {
+      final pairs = BotUtils.pairsOpeningFor(view);
+      if (pairs != null) {
+        return GameAction.layPairs(
+          pairs: pairs.map((p) => p.toProposal()).toList(),
+        );
+      }
+    }
+
     // Prefers the densest lay-down that clears the threshold, which is also how
     // a kafa - everything melded but the one tile to throw - gets found. The
     // rules require a kafa to clear the threshold like any other open, so this
@@ -125,30 +151,7 @@ class HardBot implements BotBrain {
     if (opening != null) {
       return GameAction.open(melds: opening.toProposals());
     }
-
-    final pairs = BotUtils.pairsOpeningFor(view);
-    if (pairs != null && _pairsRoadIsBetter(view, evaluation, pairs.length)) {
-      return GameAction.layPairs(
-        pairs: pairs.map((p) => p.toProposal()).toList(),
-      );
-    }
     return null;
-  }
-
-  /// The pairs road pays 202 and doubles what the opponents write, but it
-  /// forfeits runs and sets entirely. Worth it when the rack is full of
-  /// duplicates and the normal lay-down is a long way off.
-  bool _pairsRoadIsBetter(
-    PlayerView view,
-    HandEvaluation evaluation,
-    int pairCount,
-  ) {
-    if (pairCount < view.ruleSet.minPairsToOpen) return false;
-    if (pairCount >= view.ruleSet.pairsToFinish) return true;
-    final shortfall = view.ruleSet.openThresholdFor(view.openedCount) -
-        evaluation.bestPoints;
-    // Plenty of pairs and a normal open that is not close.
-    return pairCount >= view.ruleSet.minPairsToOpen + 2 && shortfall > 25;
   }
 
   GameAction? _afterOpening(PlayerView view, HandEvaluation evaluation) {
@@ -237,6 +240,7 @@ class HardBot implements BotBrain {
     HandEvaluation evaluation,
     SeenTiles seen,
     List<OpponentBelief> beliefs,
+    PairsRoad road,
   ) {
     // Caution rises as the pile empties and as the player on the right gets
     // closer to opening. It is deliberately kept modest: the draw pile is only
@@ -256,6 +260,7 @@ class HardBot implements BotBrain {
       defensiveness: defensiveness,
       willingToDropOkey: _shouldDropOkey(view, evaluation),
       openingFocus: _stillChasingTheOpen(view, evaluation),
+      pairsFocus: road.committed,
     );
   }
 
@@ -302,20 +307,4 @@ class HardBot implements BotBrain {
     return !view.rightNeighbour.hasOpened;
   }
 
-  GameAction? _pairsFinish(PlayerView view) {
-    final pairs = BotUtils.solverFor(view).bestPairs(view.hand);
-    if (pairs.isEmpty) return null;
-    final onTable = view.table.where((m) => m.ownerSeat == view.seat).length;
-    final used = <int>{
-      for (final pair in pairs)
-        for (final tile in pair.tiles) tile.id,
-    };
-    if (onTable + pairs.length >= view.ruleSet.pairsToFinish &&
-        used.length == view.hand.length) {
-      return GameAction.layPairs(
-        pairs: pairs.map((p) => p.toProposal()).toList(),
-      );
-    }
-    return null;
-  }
 }
