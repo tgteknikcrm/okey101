@@ -34,10 +34,11 @@ abstract class OpponentView with _$OpponentView {
 
 /// Everything a player at the table can legitimately see, and nothing else.
 ///
-/// Bots receive one of these and never a [GameState]. There is deliberately no
-/// field anywhere in this type that can reach another player's rack or the
-/// contents of the draw pile - only its count. `test/domain/player_view_test.dart`
-/// proves that at the type level.
+/// Bots receive one of these and never the full engine state. There is
+/// deliberately no field anywhere in this type that can reach another player's
+/// rack or the contents of the draw pile - only its count.
+/// `test/domain/player_view_test.dart` proves that at the type level, which is
+/// also why the name of the full state type appears nowhere in this file.
 @freezed
 abstract class PlayerView with _$PlayerView {
   const PlayerView._();
