@@ -6,12 +6,14 @@ import 'package:okey101/app/theme.dart';
 import 'package:okey101/data/local_store.dart';
 import 'package:okey101/data/models/saved_game.dart';
 import 'package:okey101/domain/models/game_state.dart';
+import 'package:okey101/domain/models/meld.dart';
 import 'package:okey101/domain/models/tile.dart';
 import 'package:okey101/features/game/game_controller.dart';
 import 'package:okey101/features/game/game_screen.dart';
 import 'package:okey101/features/game/game_session.dart';
-import 'package:okey101/features/game/widgets/meld_view.dart';
+import 'package:okey101/features/game/widgets/meld_board.dart';
 import 'package:okey101/features/game/widgets/rack_widget.dart';
+import 'package:okey101/features/game/widgets/tile_widget.dart';
 import 'package:okey101/l10n/generated/app_localizations.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -35,6 +37,13 @@ void main() {
     yellow(1), yellow(2), yellow(3), //
     blue(1), blue(2), blue(3),
   ];
+
+  /// Tiles sitting on the gridded table, as opposed to the rack or the deck
+  /// column. An empty table shows the hint and no tiles at all.
+  final boardTiles = find.descendant(
+    of: find.byType(MeldBoard),
+    matching: find.byType(TileWidget),
+  );
 
   late LocalStore store;
 
@@ -107,12 +116,12 @@ void main() {
     );
     final l10n = await pumpGame(tester, state);
 
-    expect(find.byType(MeldView), findsNothing);
+    expect(boardTiles, findsNothing);
 
     await tester.tap(find.widgetWithText(FilledButton, l10n.gameOpenAction));
     await tester.pumpAndSettle();
 
-    expect(find.byType(MeldView), findsWidgets);
+    expect(boardTiles, findsWidgets);
   });
 
   testWidgets('an illegal open explains why, in the player language',
@@ -142,7 +151,7 @@ void main() {
       find.textContaining('Açmak için 101 puan gerekiyor'),
       findsOneWidget,
     );
-    expect(find.byType(MeldView), findsNothing);
+    expect(boardTiles, findsNothing);
   });
 
   testWidgets('the HUD reports the best combination in hand', (tester) async {
@@ -288,10 +297,116 @@ void main() {
     );
     final l10n = await pumpGame(tester, state);
 
-    expect(find.byType(MeldView), findsNothing);
+    expect(boardTiles, findsNothing);
     await tester.tap(find.widgetWithText(FilledButton, l10n.gameOpenAction));
     await tester.pumpAndSettle();
-    expect(find.byType(MeldView), findsWidgets);
+    expect(boardTiles, findsWidgets);
+  });
+
+  testWidgets('working a tile onto a table meld has its own button',
+      (tester) async {
+    // "Islemek" used to be reachable only by tapping a meld with exactly one
+    // tile selected, which nobody discovers.
+    tester.view.physicalSize = const Size(844, 390);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final blueRun = Meld(
+      id: 1,
+      kind: MeldKind.run,
+      ownerSeat: 1,
+      tiles: [blue(4), blue(5), blue(6)],
+      jokerAssignments: const [null, null, null],
+    );
+    final state = buildState(
+      indicator: indicator,
+      hands: buildHands(
+        indicator: indicator,
+        okey: okeyIdentity,
+        cores: [
+          [blue(7)],
+          const <Tile>[],
+          const <Tile>[],
+          const <Tile>[],
+        ],
+        sizes: const [22, 21, 21, 21],
+        reserved: [blue(4), blue(5), blue(6)],
+      ),
+      table: [blueRun],
+      opened: const [true, true, false, false],
+    );
+    final l10n = await pumpGame(tester, state);
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(GameScreen)),
+    );
+    final controller = container.read(gameControllerProvider.notifier);
+
+    // Nothing selected: the button is there but does nothing.
+    expect(find.text(l10n.gameAddToMeld), findsOneWidget);
+    expect(controller.addableMeldIds(), isEmpty);
+
+    // Selecting blue 7 marks the blue 4-5-6 run as a legal target.
+    controller.toggleSelection(blue(7).id);
+    await tester.pumpAndSettle();
+    expect(controller.addableMeldIds(), {1});
+
+    final before = tester.widgetList(boardTiles).length;
+    await tester.tap(find.text(l10n.gameAddToMeld));
+    await tester.pumpAndSettle();
+
+    expect(tester.widgetList(boardTiles).length, before + 1);
+    final table = container.read(gameControllerProvider)!.state.table;
+    expect(table.single.tiles.length, 4);
+    expect(table.single.tiles.last, blue(7));
+  });
+
+  testWidgets('a tile that fits nowhere says so instead of doing nothing',
+      (tester) async {
+    tester.view.physicalSize = const Size(844, 390);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final blueRun = Meld(
+      id: 1,
+      kind: MeldKind.run,
+      ownerSeat: 1,
+      tiles: [blue(4), blue(5), blue(6)],
+      jokerAssignments: const [null, null, null],
+    );
+    final state = buildState(
+      indicator: indicator,
+      hands: buildHands(
+        indicator: indicator,
+        okey: okeyIdentity,
+        cores: [
+          [blue(11)],
+          const <Tile>[],
+          const <Tile>[],
+          const <Tile>[],
+        ],
+        sizes: const [22, 21, 21, 21],
+        reserved: [blue(4), blue(5), blue(6)],
+      ),
+      table: [blueRun],
+      opened: const [true, true, false, false],
+    );
+    await pumpGame(tester, state);
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(GameScreen)),
+    );
+    final controller = container.read(gameControllerProvider.notifier)
+      ..toggleSelection(blue(11).id);
+    await tester.pumpAndSettle();
+
+    expect(controller.addableMeldIds(), isEmpty);
+    controller.workSelection();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.byType(SnackBar), findsOneWidget);
+    expect(find.text('Bu taş o ele işlenemez.'), findsOneWidget);
   });
 
   testWidgets('the sort button offers both modes', (tester) async {

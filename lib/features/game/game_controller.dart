@@ -153,6 +153,73 @@ class GameController extends Notifier<GameSession?> {
     _applyHuman(GameAction.open(melds: solution.toProposals()));
   }
 
+  /// "Islemek": puts the selected tiles onto melds already on the table.
+  ///
+  /// Each tile is placed on the first meld that legally takes it, anyone's
+  /// included. Tiles that fit nowhere are simply left in hand; only a selection
+  /// where NOTHING fits reports an error, because that is the case where the
+  /// player pressed the button expecting something to happen.
+  void workSelection() {
+    final session = state;
+    if (session == null || session.selection.isEmpty) return;
+    if (!session.human.hasOpened || session.human.openedWithPairs) {
+      state = session.copyWith(
+        lastError: session.human.openedWithPairs
+            ? const GameError.pairsPathViolation()
+            : const GameError.cannotAddBeforeOpening(),
+      );
+      return;
+    }
+
+    var applied = 0;
+    for (final tileId in session.selection.toList()) {
+      final current = state;
+      if (current == null) break;
+      final options = BotUtils.tableAdditions(_humanView(current))
+          .where((option) => option.tileId == tileId)
+          .toList();
+      if (options.isEmpty) continue;
+      final pick = options.first;
+      _applyHuman(
+        GameAction.addToMeld(
+          meldId: pick.meldId,
+          tileId: pick.tileId,
+          atStart: pick.atStart,
+        ),
+      );
+      applied++;
+    }
+
+    if (applied == 0) {
+      final current = state;
+      if (current != null) {
+        state = current.copyWith(
+          lastError: GameError.tileDoesNotExtendMeld(
+            meldId: -1,
+            tileId: session.selection.first,
+          ),
+        );
+      }
+      return;
+    }
+    clearSelection();
+  }
+
+  /// Melds the current selection could legally be worked onto, so the board can
+  /// point them out before the player commits.
+  Set<int> addableMeldIds() {
+    final session = state;
+    if (session == null || session.selection.isEmpty) return const <int>{};
+    if (!session.isHumanTurn) return const <int>{};
+    if (!session.human.hasOpened || session.human.openedWithPairs) {
+      return const <int>{};
+    }
+    return <int>{
+      for (final option in BotUtils.tableAdditions(_humanView(session)))
+        if (session.selection.contains(option.tileId)) option.meldId,
+    };
+  }
+
   /// Lays the current selection as one more meld after opening.
   void laySelectionAsMeld() {
     final session = state;

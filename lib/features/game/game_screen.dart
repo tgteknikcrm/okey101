@@ -13,7 +13,7 @@ import 'package:okey101/domain/models/tile.dart';
 import 'package:okey101/features/game/game_controller.dart';
 import 'package:okey101/features/game/game_session.dart';
 import 'package:okey101/features/game/widgets/hand_over_sheet.dart';
-import 'package:okey101/features/game/widgets/meld_view.dart';
+import 'package:okey101/features/game/widgets/meld_board.dart';
 import 'package:okey101/features/game/widgets/opponent_panel.dart';
 import 'package:okey101/features/game/widgets/rack_widget.dart';
 import 'package:okey101/features/game/widgets/tile_widget.dart';
@@ -201,8 +201,10 @@ class _Board extends ConsumerWidget {
   final void Function(GameSession session, List<int?> slots) onCommitLayout;
   final void Function(GameSession session, int tileId) onDragOut;
 
-  /// Width of the two side rails in the landscape board.
-  static const double leftRailWidth = 132;
+  /// Width of the rails flanking the table in the landscape board.
+  static const double leftRailWidth = 106;
+  static const double deckColumnWidth = 62;
+  static const double pairsPanelWidth = 72;
   static const double rightRailWidth = 116;
 
   /// Share of the height the rack may take. The rest is the table.
@@ -247,8 +249,9 @@ class _Board extends ConsumerWidget {
     );
   }
 
-  /// Wide and short: the opponents and the actions move into side rails so the
-  /// table keeps the middle and the rack keeps the full width.
+  /// Wide and short. Everything that is not the table moves into a rail, so the
+  /// gridded board gets the middle and the rack keeps the full width - the same
+  /// arrangement a physical okey table has.
   Widget _landscapeBoard(
     AppSettings settings,
     GameController controller,
@@ -272,13 +275,6 @@ class _Board extends ConsumerWidget {
                 child: Column(
                   children: [
                     _Header(session: session, dense: true),
-                    _CentreStrip(
-                      session: session,
-                      colorblind: settings.colorblind,
-                      compact: true,
-                      onDrawPile: controller.drawFromPile,
-                      onDrawDiscard: controller.drawFromDiscard,
-                    ),
                     Expanded(
                       child: _TableArea(
                         session: session,
@@ -290,6 +286,24 @@ class _Board extends ConsumerWidget {
                     ),
                     _HudBar(session: session),
                   ],
+                ),
+              ),
+              // Draw pile and indicator stand in a column rather than a strip:
+              // vertical space is what the grid board needs most.
+              SizedBox(
+                width: deckColumnWidth,
+                child: _DeckColumn(
+                  session: session,
+                  colorblind: settings.colorblind,
+                  onDrawPile: controller.drawFromPile,
+                  onDrawDiscard: controller.drawFromDiscard,
+                ),
+              ),
+              SizedBox(
+                width: pairsPanelWidth,
+                child: _PairsPanel(
+                  session: session,
+                  colorblind: settings.colorblind,
                 ),
               ),
               SizedBox(
@@ -572,7 +586,6 @@ class _CentreStrip extends ConsumerWidget {
     required this.colorblind,
     required this.onDrawPile,
     required this.onDrawDiscard,
-    this.compact = false,
   });
 
   final GameSession session;
@@ -580,10 +593,7 @@ class _CentreStrip extends ConsumerWidget {
   final VoidCallback onDrawPile;
   final VoidCallback onDrawDiscard;
 
-  /// Smaller tiles and tighter margins for the landscape board.
-  final bool compact;
-
-  double get _tileWidth => compact ? 26 : 34;
+  static const double _tileWidth = 34;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -596,12 +606,8 @@ class _CentreStrip extends ConsumerWidget {
         session.isHumanTurn && game.phase == TurnPhase.awaitingDraw;
 
     return Container(
-      margin: compact
-          ? const EdgeInsets.fromLTRB(4, 0, 4, 3)
-          : const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      padding: compact
-          ? const EdgeInsets.symmetric(horizontal: 6, vertical: 3)
-          : const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: const Color(0x1AFBF5E6),
         borderRadius: BorderRadius.circular(12),
@@ -614,10 +620,9 @@ class _CentreStrip extends ConsumerWidget {
             child: _Slot(
               label: l10n.gameTakeDiscard,
               enabled: canDraw && leftTop != null,
-              compact: compact,
               onTap: canDraw && leftTop != null ? onDrawDiscard : null,
               child: leftTop == null
-                  ? _EmptySlot(width: _tileWidth)
+                  ? const _EmptySlot()
                   : _tile(l10n, leftTop, game.okey),
             ),
           ),
@@ -625,18 +630,16 @@ class _CentreStrip extends ConsumerWidget {
             child: _Slot(
               label: l10n.gameRemainingTiles(game.drawPile.length),
               enabled: canDraw && game.drawPile.isNotEmpty,
-              compact: compact,
               onTap: canDraw && game.drawPile.isNotEmpty ? onDrawPile : null,
               child: game.drawPile.isEmpty
-                  ? _EmptySlot(width: _tileWidth)
-                  : TileWidget(width: _tileWidth, faceDown: true),
+                  ? const _EmptySlot()
+                  : const TileWidget(width: _tileWidth, faceDown: true),
             ),
           ),
           Expanded(
             child: _Slot(
               label: l10n.gameIndicator,
               enabled: false,
-              compact: compact,
               child: _tile(l10n, game.indicator, game.okey),
             ),
           ),
@@ -644,9 +647,8 @@ class _CentreStrip extends ConsumerWidget {
             child: _Slot(
               label: l10n.gameDiscardPile,
               enabled: false,
-              compact: compact,
               child: ownTop == null
-                  ? _EmptySlot(width: _tileWidth)
+                  ? const _EmptySlot()
                   : _tile(l10n, ownTop, game.okey),
             ),
           ),
@@ -708,10 +710,14 @@ class _Slot extends StatelessWidget {
             const SizedBox(height: 1),
             Text(
               label,
-              maxLines: 1,
+              textAlign: TextAlign.center,
+              // The deck column is narrow, so its labels wrap rather than being
+              // cut off mid-word.
+              maxLines: compact ? 2 : 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: compact ? 8 : 9,
+                height: 1.1,
                 color: enabled ? OkeyPalette.brass : OkeyPalette.ivoryShade,
               ),
             ),
@@ -738,7 +744,7 @@ class _EmptySlot extends StatelessWidget {
       );
 }
 
-class _TableArea extends StatelessWidget {
+class _TableArea extends ConsumerWidget {
   const _TableArea({
     required this.session,
     required this.colorblind,
@@ -753,44 +759,162 @@ class _TableArea extends StatelessWidget {
   final ValueChanged<int> onTapMeld;
   final void Function(int meldId, int index) onTapMeldTile;
 
+  /// Each seat gets a colour so a meld can say who laid it in the two pixels a
+  /// grid cell can spare.
+  static Color ownerColor(int seat) => switch (seat % 4) {
+        0 => OkeyPalette.brass,
+        1 => OkeyPalette.tileBlue,
+        2 => OkeyPalette.tileRed,
+        _ => OkeyPalette.success,
+      };
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
+    final game = session.state;
+    final addable =
+        ref.read(gameControllerProvider.notifier).addableMeldIds();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(6, 2, 6, 2),
+      child: MeldBoard(
+        melds: game.table,
+        okey: game.okey,
+        indicatorIdentity: game.indicatorIdentity,
+        ownerColorOf: ownerColor,
+        colorblind: colorblind,
+        glyphFor: (color) => colorGlyph(l10n, color),
+        focusedMeldId: focusedMeldId,
+        addableMeldIds: addable,
+        onTapMeld: onTapMeld,
+        onTapMeldTile: onTapMeldTile,
+        emptyHint: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Text(
+            l10n.gameSelectTilesHint,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Color(0x88FBF5E6), fontSize: 11),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Draw pile, indicator and the two reachable discard piles, stacked.
+class _DeckColumn extends StatelessWidget {
+  const _DeckColumn({
+    required this.session,
+    required this.colorblind,
+    required this.onDrawPile,
+    required this.onDrawDiscard,
+  });
+
+  final GameSession session;
+  final bool colorblind;
+  final VoidCallback onDrawPile;
+  final VoidCallback onDrawDiscard;
+
+  static const double tileWidth = 22;
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final game = session.state;
-    if (game.table.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 32),
-          child: Text(
-            l10n.gameSelectTilesHint,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Color(0x88FBF5E6),
-              fontSize: 12,
+    final leftTop = game.players[seatToLeftOf(session.humanSeat)].topDiscard;
+    final ownTop = game.players[session.humanSeat].topDiscard;
+    final canDraw =
+        session.isHumanTurn && game.phase == TurnPhase.awaitingDraw;
+
+    Widget tile(Tile value) => TileWidget(
+          width: tileWidth,
+          tile: value,
+          kind: value.isFalseJoker
+              ? TileFaceKind.falseJoker
+              : (value.color == game.okey.color &&
+                      value.number == game.okey.number)
+                  ? TileFaceKind.okey
+                  : TileFaceKind.normal,
+          colorblindGlyph: colorblind && value.color != null
+              ? colorGlyph(l10n, value.color!)
+              : null,
+        );
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      decoration: BoxDecoration(
+        color: const Color(0x1AFBF5E6),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          children: [
+            _Slot(
+              label: l10n.gameTakeDiscard,
+              enabled: canDraw && leftTop != null,
+              compact: true,
+              onTap: canDraw && leftTop != null ? onDrawDiscard : null,
+              child: leftTop == null
+                  ? const _EmptySlot(width: tileWidth)
+                  : tile(leftTop),
             ),
-          ),
+            _Slot(
+              label: l10n.gameRemainingTiles(game.drawPile.length),
+              enabled: canDraw && game.drawPile.isNotEmpty,
+              compact: true,
+              onTap: canDraw && game.drawPile.isNotEmpty ? onDrawPile : null,
+              child: game.drawPile.isEmpty
+                  ? const _EmptySlot(width: tileWidth)
+                  : const TileWidget(width: tileWidth, faceDown: true),
+            ),
+            _Slot(
+              label: l10n.gameIndicator,
+              enabled: false,
+              compact: true,
+              child: tile(game.indicator),
+            ),
+            _Slot(
+              label: l10n.gameDiscardPile,
+              enabled: false,
+              compact: true,
+              child: ownTop == null
+                  ? const _EmptySlot(width: tileWidth)
+                  : tile(ownTop),
+            ),
+          ],
         ),
-      );
-    }
-    return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      child: Wrap(
-        spacing: 6,
-        runSpacing: 6,
-        children: [
-          for (final meld in game.table)
-            MeldView(
-              meld: meld,
-              okey: game.okey,
-              ownerName: game.players[meld.ownerSeat].name,
-              tileWidth: 22,
-              colorblind: colorblind,
-              glyphFor: (color) => colorGlyph(l10n, color),
-              highlighted: focusedMeldId == meld.id,
-              onTap: () => onTapMeld(meld.id),
-              onTapTile: (index) => onTapMeldTile(meld.id, index),
-            ),
-        ],
+      ),
+    );
+  }
+}
+
+/// The pairs panel, kept apart from the main grid.
+class _PairsPanel extends StatelessWidget {
+  const _PairsPanel({required this.session, required this.colorblind});
+
+  final GameSession session;
+  final bool colorblind;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final game = session.state;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 3),
+      decoration: BoxDecoration(
+        color: const Color(0x14FBF5E6),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: PairsBoard(
+        melds: game.table,
+        okey: game.okey,
+        ownerColorOf: _TableArea.ownerColor,
+        colorblind: colorblind,
+        glyphFor: (color) => colorGlyph(l10n, color),
+        label: l10n.gamePairsMode,
       ),
     );
   }
@@ -937,8 +1061,22 @@ class _ActionBar extends ConsumerWidget {
       expand: vertical,
       onPressed: canAct ? controller.layPairs : null,
     );
+    // "Islemek": the selected tiles go onto melds already on the table. It was
+    // previously only reachable by tapping a meld, which nobody finds.
+    final canWork = canAct &&
+        session.human.hasOpened &&
+        !session.human.openedWithPairs &&
+        controller.addableMeldIds().isNotEmpty;
+    final work = _Action(
+      icon: Icons.add_box_outlined,
+      label: l10n.gameAddToMeld,
+      expand: vertical,
+      onPressed: canWork ? controller.workSelection : null,
+    );
     final showPairs =
         !session.human.hasOpened || session.human.openedWithPairs;
+    final showWork =
+        session.human.hasOpened && !session.human.openedWithPairs;
 
     if (vertical) {
       return SingleChildScrollView(
@@ -948,6 +1086,7 @@ class _ActionBar extends ConsumerWidget {
           children: [
             if (!session.human.hasOpened) open,
             discard,
+            if (showWork) work,
             layMeld,
             if (showPairs) layPairs,
             sort,
@@ -967,6 +1106,7 @@ class _ActionBar extends ConsumerWidget {
         children: [
           sort,
           undo,
+          if (showWork) work,
           layMeld,
           if (!session.human.hasOpened) open,
           if (showPairs) layPairs,
@@ -1006,7 +1146,7 @@ class _Action extends StatelessWidget {
     // which puts six stacked actions at 312 in a 240-pixel rail - the last two
     // end up below the fold. shrinkWrap lets the declared height stand.
     final size = expand ? const Size(0, 36) : const Size(64, 44);
-    final padding = EdgeInsets.symmetric(horizontal: expand ? 6 : 12);
+    final padding = EdgeInsets.symmetric(horizontal: expand ? 4 : 12);
     final tapTarget =
         expand ? MaterialTapTargetSize.shrinkWrap : MaterialTapTargetSize.padded;
 
@@ -1017,7 +1157,7 @@ class _Action extends StatelessWidget {
       child: primary
           ? FilledButton.icon(
               onPressed: onPressed,
-              icon: Icon(icon, size: 16),
+              icon: Icon(icon, size: expand ? 14 : 16),
               label: label,
               style: FilledButton.styleFrom(
                 minimumSize: size,
@@ -1027,7 +1167,7 @@ class _Action extends StatelessWidget {
             )
           : OutlinedButton.icon(
               onPressed: onPressed,
-              icon: Icon(icon, size: 16),
+              icon: Icon(icon, size: expand ? 14 : 16),
               label: label,
               style: OutlinedButton.styleFrom(
                 minimumSize: size,
