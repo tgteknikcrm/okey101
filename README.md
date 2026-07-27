@@ -57,8 +57,48 @@ WebKit-based iOS browsers is unreliable.
 ## Deployment
 
 Pushing to `main` runs `.github/workflows/deploy.yml`, which builds and deploys
-to GitHub Pages. Repository **Settings → Pages → Source** must be
+to GitHub Pages. Repository **Settings → Pages → Source** is already set to
 **GitHub Actions**.
+
+### One-time step: install the workflow
+
+The workflow file is kept at [`deploy/github-pages-workflow.yml`](deploy/github-pages-workflow.yml)
+because GitHub refuses to accept a file under `.github/workflows/` from a token
+that lacks the `workflow` OAuth scope. Install it once, either way:
+
+**From a terminal**
+
+```bash
+gh auth refresh -h github.com -s workflow      # one browser click
+mkdir -p .github/workflows
+cp deploy/github-pages-workflow.yml .github/workflows/deploy.yml
+git add .github/workflows/deploy.yml
+git commit -m "Add GitHub Pages deploy workflow"
+git push
+```
+
+**Or from the browser**
+
+Repo → *Add file* → *Create new file* → name it
+`.github/workflows/deploy.yml` → paste the contents of
+`deploy/github-pages-workflow.yml` → *Commit*.
+
+Either way the first run starts immediately and the site goes live at
+https://tgteknikcrm.github.io/okey101/.
 
 > Service workers cache aggressively. If a change does not show up after a push,
 > fully close and reopen the installed app.
+
+## Benchmarking
+
+The Dart VM is several times faster than compiled JavaScript, so a solver
+number from `flutter test` is not the number that matters. Two ways to get a
+real browser figure:
+
+```bash
+# headless Chrome, no Flutter involved
+dart compile js -O2 -o bench.js tool/bench_web.dart
+# then open a page that loads bench.js, or use --dump-dom
+
+# or, on the actual phone: menu → Hata Ayıklama → "MeldSolver benchmark"
+```

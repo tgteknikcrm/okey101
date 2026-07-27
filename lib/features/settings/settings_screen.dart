@@ -261,7 +261,10 @@ class SettingsScreen extends ConsumerWidget {
           ),
 
           _SectionTitle(l10n.settingsScoring),
-          _ScoringTable(table: rules.scoringTable),
+          _ScoringTable(
+            table: rules.scoringTable,
+            onEditRow: (key) => _editScoringRow(context, ref, rules, key),
+          ),
 
           const SizedBox(height: 16),
           OutlinedButton.icon(
@@ -297,6 +300,37 @@ class SettingsScreen extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  /// Edits one row of the scoring table in place, so every number in the game
+  /// is reachable without a rebuild.
+  Future<void> _editScoringRow(
+    BuildContext context,
+    WidgetRef ref,
+    RuleSet rules,
+    ScoreRowKey key,
+  ) async {
+    final edited = await showDialog<ScoringRow>(
+      context: context,
+      builder: (context) => _ScoringRowDialog(
+        rowKey: key,
+        row: rules.scoringTable.rowFor(key),
+      ),
+    );
+    if (edited == null) return;
+    final table = rules.scoringTable;
+    final next = switch (key) {
+      ScoreRowKey.normal => table.copyWith(normal: edited),
+      ScoreRowKey.head => table.copyWith(head: edited),
+      ScoreRowKey.pairs => table.copyWith(pairs: edited),
+      ScoreRowKey.withOkey => table.copyWith(withOkey: edited),
+      ScoreRowKey.okeyHead => table.copyWith(okeyHead: edited),
+      ScoreRowKey.pairsWithOkey => table.copyWith(pairsWithOkey: edited),
+      ScoreRowKey.exhausted => table.copyWith(exhausted: edited),
+    };
+    ref.read(settingsProvider.notifier).setRuleSet(
+          rules.copyWith(scoringTable: next, preset: RulePreset.custom),
+        );
   }
 
   Future<void> _exportHistory(BuildContext context, WidgetRef ref) async {
@@ -436,9 +470,10 @@ class _NumberTile extends StatelessWidget {
 }
 
 class _ScoringTable extends StatelessWidget {
-  const _ScoringTable({required this.table});
+  const _ScoringTable({required this.table, required this.onEditRow});
 
   final ScoringTable table;
+  final ValueChanged<ScoreRowKey> onEditRow;
 
   @override
   Widget build(BuildContext context) {
@@ -485,49 +520,46 @@ class _ScoringTable extends StatelessWidget {
             ),
             const Divider(),
             for (final key in ScoreRowKey.values)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 3),
-                child: Row(
-                  children: [
-                    Expanded(
-                      flex: 3,
-                      child: Text(
-                        finishTypeLabel(
-                          l10n,
-                          key == ScoreRowKey.exhausted
-                              ? null
-                              : FinishType.values.firstWhere(
-                                  (t) => t.name == key.name,
-                                ),
+              InkWell(
+                onTap: () => onEditRow(key),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        flex: 3,
+                        child: Text(
+                          scoreRowLabel(l10n, key),
+                          style: const TextStyle(fontSize: 11),
                         ),
-                        style: const TextStyle(fontSize: 11),
                       ),
-                    ),
-                    Expanded(
-                      flex: 2,
-                      child: Text(
-                        '${table.rowFor(key).winnerPoints ?? '-'}',
-                        textAlign: TextAlign.right,
-                        style: const TextStyle(fontSize: 11),
+                      Expanded(
+                        flex: 2,
+                        child: Text(
+                          '${table.rowFor(key).winnerPoints ?? '-'}',
+                          textAlign: TextAlign.right,
+                          style: const TextStyle(fontSize: 11),
+                        ),
                       ),
-                    ),
-                    Expanded(
-                      flex: 2,
-                      child: Text(
-                        penalty(table.rowFor(key).opened),
-                        textAlign: TextAlign.right,
-                        style: const TextStyle(fontSize: 11),
+                      Expanded(
+                        flex: 2,
+                        child: Text(
+                          penalty(table.rowFor(key).opened),
+                          textAlign: TextAlign.right,
+                          style: const TextStyle(fontSize: 11),
+                        ),
                       ),
-                    ),
-                    Expanded(
-                      flex: 2,
-                      child: Text(
-                        penalty(table.rowFor(key).notOpened),
-                        textAlign: TextAlign.right,
-                        style: const TextStyle(fontSize: 11),
+                      Expanded(
+                        flex: 2,
+                        child: Text(
+                          penalty(table.rowFor(key).notOpened),
+                          textAlign: TextAlign.right,
+                          style: const TextStyle(fontSize: 11),
+                        ),
                       ),
-                    ),
-                  ],
+                      const Icon(Icons.edit, size: 12),
+                    ],
+                  ),
                 ),
               ),
           ],
@@ -536,3 +568,147 @@ class _ScoringTable extends StatelessWidget {
     );
   }
 }
+
+/// Edits one scoring row: the winner's points and both opponent penalties.
+class _ScoringRowDialog extends StatefulWidget {
+  const _ScoringRowDialog({required this.rowKey, required this.row});
+
+  final ScoreRowKey rowKey;
+  final ScoringRow row;
+
+  @override
+  State<_ScoringRowDialog> createState() => _ScoringRowDialogState();
+}
+
+class _ScoringRowDialogState extends State<_ScoringRowDialog> {
+  late int _winner = widget.row.winnerPoints ?? 0;
+
+  /// The exhausted-deck row has no winner, so its bonus stays absent.
+  late final bool _hasWinnerPoints = widget.row.winnerPoints != null;
+  late OpponentPenalty _opened = widget.row.opened;
+  late OpponentPenalty _notOpened = widget.row.notOpened;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return AlertDialog(
+      title: Text(scoreRowLabel(l10n, widget.rowKey)),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (_hasWinnerPoints)
+              _NumberTile(
+                title: l10n.scoringWinner,
+                value: _winner,
+                min: -2020,
+                max: 0,
+                step: 101,
+                onChanged: (value) => setState(() => _winner = value),
+              )
+            else
+              ListTile(
+                title: Text(l10n.scoringWinner),
+                trailing: const Text('-'),
+                subtitle: Text(l10n.handOverNoWinner),
+              ),
+            const Divider(),
+            _PenaltyEditor(
+              title: l10n.scoringOpened,
+              value: _opened,
+              onChanged: (value) => setState(() => _opened = value),
+            ),
+            const Divider(),
+            _PenaltyEditor(
+              title: l10n.scoringNotOpened,
+              value: _notOpened,
+              onChanged: (value) => setState(() => _notOpened = value),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(l10n.commonCancel),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(
+            ScoringRow(
+              winnerPoints: _hasWinnerPoints ? _winner : null,
+              opened: _opened,
+              notOpened: _notOpened,
+            ),
+          ),
+          child: Text(l10n.commonSave),
+        ),
+      ],
+    );
+  }
+}
+
+class _PenaltyEditor extends StatelessWidget {
+  const _PenaltyEditor({
+    required this.title,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String title;
+  final OpponentPenalty value;
+  final ValueChanged<OpponentPenalty> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final isFlat = value is FlatPenalty;
+    final number = switch (value) {
+      DeadwoodMultiple(:final multiplier) => multiplier,
+      FlatPenalty(:final points) => points,
+    };
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _ChoiceTile<bool>(
+          title: title,
+          value: isFlat,
+          options: {
+            false: l10n.scoringMultiplier(number.clamp(1, 99)),
+            true: l10n.scoringFlat(number),
+          },
+          onChanged: (flat) => onChanged(
+            flat
+                ? OpponentPenalty.flat(points: number < 4 ? number * 101 : number)
+                : OpponentPenalty.deadwoodMultiple(
+                    multiplier: number > 8 ? 1 : number,
+                  ),
+          ),
+        ),
+        _NumberTile(
+          title: isFlat ? l10n.scoringFlat(number) : l10n.scoringMultiplier(number),
+          value: number,
+          min: isFlat ? 0 : 1,
+          max: isFlat ? 2020 : 8,
+          step: isFlat ? 101 : 1,
+          onChanged: (next) => onChanged(
+            isFlat
+                ? OpponentPenalty.flat(points: next)
+                : OpponentPenalty.deadwoodMultiple(multiplier: next),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Label for a scoring row, including the exhausted-deck case that has no
+/// matching finish type.
+String scoreRowLabel(AppLocalizations l10n, ScoreRowKey key) =>
+    finishTypeLabel(
+      l10n,
+      key == ScoreRowKey.exhausted
+          ? null
+          : FinishType.values.firstWhere((t) => t.name == key.name),
+    );
