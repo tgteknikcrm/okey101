@@ -1,0 +1,40 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/coverage/
+lcov.info
+
+# Generated localisations. `flutter pub get` regenerates these from the ARB
+# files, and CI does too, so they are not tracked.
+lib/l10n/generated/
+
+# Note: *.freezed.dart and *.g.dart ARE tracked on purpose. The repo stays
+# buildable without running code generation first, and CI regenerating them is
+# then a consistency check rather than a prerequisite.
+
+# Simulation output
+tool/out/

@@ -1,0 +1,40 @@
+name: okey101
+description: "Okey 101 - Turkish Yuzbir Okey as an offline-first Flutter Web PWA."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  cupertino_icons: ^1.0.8
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  # Riverpod 3.x, manual API only (NotifierProvider / Provider). No codegen.
+  flutter_riverpod: ^3.4.1
+  freezed_annotation: ^3.1.0
+  # Exact pin: flutter_localizations from the Flutter SDK pins this version
+  # exactly, so a caret constraint does not resolve.
+  intl: 0.20.2
+  json_annotation: ^4.12.0
+  # Dependency ONLY to pin the resolution graph to the Riverpod 3.x generation.
+  # The riverpod_generator / riverpod_lint builders are deliberately NOT used.
+  riverpod_annotation: ^4.0.5
+  # The only persistence mechanism. Maps to window.localStorage on web.
+  shared_preferences: ^2.5.5
+
+dev_dependencies:
+  build_runner: ^2.15.1
+  flutter_test:
+    sdk: flutter
+  freezed: ^3.2.5
+  json_serializable: ^6.14.0
+  mocktail: ^1.0.5
+  very_good_analysis: ^10.3.0
+
+flutter:
+  uses-material-design: true
+  # Generates lib/l10n/generated/app_localizations.dart from the ARB files.
+  generate: true

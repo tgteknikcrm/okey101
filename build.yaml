@@ -1,0 +1,9 @@
+# Mandatory. Without explicit_to_json, nested models are emitted as live Dart
+# objects instead of maps, so Model.fromJson(model.toJson()) throws a cast
+# error - which is exactly what save/restore and rule-preset copying do.
+targets:
+  $default:
+    builders:
+      json_serializable:
+        options:
+          explicit_to_json: true
