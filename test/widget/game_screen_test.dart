@@ -299,7 +299,6 @@ void main() {
       l10n.gameDiscardPile,
       l10n.gameLayMeld,
       l10n.gameLayPairs,
-      l10n.gameSort,
       l10n.commonUndo,
     ]) {
       // Scoped to the strip: "Iskarta" also labels the player's own discard
@@ -562,19 +561,25 @@ void main() {
       reason: 'rearranging must not lose or gain a tile',
     );
 
-    // Sorting is the same kind of thing, and was locked the same way.
-    expect(
-      tester
-          .widget<OutlinedButton>(
-            find.ancestor(
-              of: find.text(l10n.gameSort),
-              matching: find.byType(OutlinedButton),
-            ),
-          )
-          .onPressed,
-      isNotNull,
-      reason: 'sort is a rack arrangement, not a move',
-    );
+    // Sorting is the same kind of thing, and was locked the same way. Both
+    // buttons live beside the rack now.
+    for (final label in <String>[
+      l10n.gameSortRunsShort,
+      l10n.gameSortSetsShort,
+    ]) {
+      expect(
+        tester
+            .widget<OutlinedButton>(
+              find.ancestor(
+                of: find.text(label),
+                matching: find.byType(OutlinedButton),
+              ),
+            )
+            .onPressed,
+        isNotNull,
+        reason: '$label arranges the rack, it is not a move',
+      );
+    }
 
     // Drain the bots so no think timer is left pending.
     await tester.pumpAndSettle(const Duration(minutes: 2));
@@ -935,8 +940,11 @@ void main() {
     );
   });
 
-  testWidgets('the sort button offers both modes', (tester) async {
-    tester.view.physicalSize = const Size(420, 900);
+  testWidgets('Seri and Per each rearrange the rack', (tester) async {
+    // Two buttons beside the rack instead of a Sort button that opened a
+    // sheet: sorting is reached far more often than any move, and it belongs
+    // next to the tiles it sorts.
+    tester.view.physicalSize = const Size(844, 390);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
 
@@ -951,14 +959,23 @@ void main() {
     );
     final l10n = await pumpGame(tester, state);
 
-    await tester.tap(find.text(l10n.gameSort));
-    await tester.pumpAndSettle();
+    List<int?> slots() =>
+        List<int?>.of(tester.widget<RackWidget>(find.byType(RackWidget)).slots);
 
-    expect(find.text(l10n.gameSortRuns), findsOneWidget);
-    expect(find.text(l10n.gameSortSets), findsOneWidget);
-
-    await tester.tap(find.text(l10n.gameSortRuns));
+    final dealt = slots();
+    await tester.tap(find.text(l10n.gameSortSetsShort));
     await tester.pumpAndSettle();
-    expect(find.byType(SnackBar), findsNothing);
+    final bySets = slots();
+
+    await tester.tap(find.text(l10n.gameSortRunsShort));
+    await tester.pumpAndSettle();
+    final byRuns = slots();
+
+    expect(bySets, isNot(byRuns), reason: 'the two modes must differ');
+    expect(
+      byRuns.whereType<int>().toSet(),
+      dealt.whereType<int>().toSet(),
+      reason: 'sorting must not lose or gain a tile',
+    );
   });
 }

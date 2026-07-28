@@ -102,7 +102,6 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                   session: session,
                   compactOpponents: compactOpponents,
                   focusedMeldId: _focusedMeldId,
-                  onSort: _showSortMenu,
                   onTapMeld: _handleMeldTap,
                   onTapMeldTile: _handleMeldTileTap,
                   onCommitLayout: _commitLayout,
@@ -187,37 +186,6 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         .read(gameControllerProvider.notifier)
         .replaceJoker(meldId, index, session.selection.single);
   }
-
-  Future<void> _showSortMenu() async {
-    final l10n = AppLocalizations.of(context);
-    final controller = ref.read(gameControllerProvider.notifier);
-    final choice = await showModalBottomSheet<int>(
-      context: context,
-      backgroundColor: OkeyPalette.felt,
-      // A landscape phone is 390 tall and the default sheet is capped at 9/16
-      // of that, which is not enough for two list tiles plus the safe area.
-      isScrollControlled: true,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.linear_scale),
-              title: Text(l10n.gameSortRuns),
-              onTap: () => Navigator.of(context).pop(0),
-            ),
-            ListTile(
-              leading: const Icon(Icons.grid_view),
-              title: Text(l10n.gameSortSets),
-              onTap: () => Navigator.of(context).pop(1),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (choice == 0) controller.sortForRuns();
-    if (choice == 1) controller.sortForSets();
-  }
 }
 
 /// Where a dragged tile is being pulled from.
@@ -243,7 +211,6 @@ class _Board extends ConsumerWidget {
     required this.session,
     required this.compactOpponents,
     required this.focusedMeldId,
-    required this.onSort,
     required this.onTapMeld,
     required this.onTapMeldTile,
     required this.onCommitLayout,
@@ -254,7 +221,6 @@ class _Board extends ConsumerWidget {
   final GameSession session;
   final bool compactOpponents;
   final int? focusedMeldId;
-  final VoidCallback onSort;
   final ValueChanged<int> onTapMeld;
   final void Function(int meldId, int index) onTapMeldTile;
   final void Function(GameSession session, List<int?> slots) onCommitLayout;
@@ -274,6 +240,10 @@ class _Board extends ConsumerWidget {
 
   /// Share of the height the rack may take. The rest is the table.
   static const double rackHeightShare = 0.30;
+
+  /// The Seri / Per column beside the rack.
+  static const double sortColumnWidth = 62;
+  static const double sortButtonHeight = 46;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -329,6 +299,7 @@ class _Board extends ConsumerWidget {
 
     return Column(
       children: [
+        _GameHeader(session: session),
         Expanded(
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -407,7 +378,7 @@ class _Board extends ConsumerWidget {
             ],
           ),
         ),
-        _ActionBar(session: session, onSort: onSort, dense: true),
+        _ActionBar(session: session, dense: true),
         rack,
       ],
     );
@@ -457,13 +428,70 @@ class _Board extends ConsumerWidget {
           ),
         ),
         _HudBar(session: session),
-        _ActionBar(session: session, onSort: onSort),
+        _ActionBar(session: session),
         rack,
       ],
     );
   }
 
   Widget _rack(
+    BuildContext context,
+    WidgetRef ref, {
+    required double maxHeight,
+  }) {
+    final l10n = AppLocalizations.of(context);
+    final controller = ref.read(gameControllerProvider.notifier);
+
+    // Sorting sits beside the tiles it sorts rather than in the action row: it
+    // arranges the rack and nothing else, and it is reached far more often
+    // than any of the moves.
+    return Row(
+      children: [
+        Expanded(child: _rackBoard(context, ref, maxHeight: maxHeight)),
+        SizedBox(
+          width: sortColumnWidth,
+          // Fixed heights, not Expanded: the rack sizes itself from its own
+          // constraints, so stretching the row to match would ask this column
+          // for an infinite height.
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(0, 0, 6, 6),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  height: sortButtonHeight,
+                  child: _SortButton(
+                    icon: Icons.linear_scale,
+                    label: l10n.gameSortRunsShort,
+                    onPressed: () {
+                      ref.read(feedbackProvider).light();
+                      controller.sortForRuns();
+                    },
+                  ),
+                ),
+                const SizedBox(height: 6),
+                SizedBox(
+                  height: sortButtonHeight,
+                  child: _SortButton(
+                    icon: Icons.grid_view,
+                    label: l10n.gameSortSetsShort,
+                    onPressed: () {
+                      ref.read(feedbackProvider).light();
+                      controller.sortForSets();
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _rackBoard(
     BuildContext context,
     WidgetRef ref, {
     required double maxHeight,
@@ -499,8 +527,8 @@ class _Board extends ConsumerWidget {
             color: candidate.isNotEmpty
                 ? OkeyPalette.brass
                 : session.isHumanTurn
-                    ? OkeyPalette.brass.withValues(alpha: 0.55)
-                    : Colors.transparent,
+                ? OkeyPalette.brass.withValues(alpha: 0.55)
+                : Colors.transparent,
             width: 2,
           ),
         ),
@@ -831,46 +859,96 @@ class _DraggableSource extends StatelessWidget {
   }
 }
 
-/// The top edge, doubling as the game's header: the way out and the settings
-/// on the left, the seat across the table centred, and the purse on the right.
+/// The header, across the very top of the screen: the way out and the settings
+/// on the left, the purse on the right.
 ///
-/// It is one strip, not a header stacked on top of one. A landscape phone has
-/// 390 pixels of height and the rack and the actions already claim two fifths
-/// of it; a second row across the top would come straight out of the board.
-class _TopStrip extends ConsumerWidget {
+/// Its own row, above everything - above the seat rails, not level with the
+/// seat opposite. It costs the board a row, which is why it is as short as an
+/// icon button allows.
+class _GameHeader extends StatelessWidget {
+  const _GameHeader({required this.session});
+
+  final GameSession session;
+
+  static const double height = 34;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: height,
+      child: Row(
+        children: [
+          _BackButton(session: session, dense: true),
+          const _SettingsButton(),
+          const Spacer(),
+          const _Purse(),
+        ],
+      ),
+    );
+  }
+}
+
+/// The top edge of the table: the seat across from the player, centred.
+class _TopStrip extends StatelessWidget {
   const _TopStrip({required this.session, required this.seat});
 
   final GameSession session;
   final int seat;
 
-  static const double height = 46;
+  static const double height = 38;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final game = session.state;
-
     return SizedBox(
       height: height,
-      child: Row(
+      child: Center(
+        child: SeatChip(
+          player: game.players[seat],
+          isCurrent: game.currentSeat == seat && !game.isHandOver,
+          thinking: session.botThinking,
+          axis: Axis.horizontal,
+        ),
+      ),
+    );
+  }
+}
+
+/// One of the two buttons beside the rack: Seri for runs, Per for sets.
+class _SortButton extends StatelessWidget {
+  const _SortButton({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton(
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        padding: EdgeInsets.zero,
+        minimumSize: Size.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+        ),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          // Two equal flexible cells either side, so the seat opposite sits
-          // dead centre of the table however wide the corners grow.
-          Expanded(
-            child: Row(
-              children: [
-                _BackButton(session: session, dense: true),
-                const _SettingsButton(),
-              ],
-            ),
-          ),
-          SeatChip(
-            player: game.players[seat],
-            isCurrent: game.currentSeat == seat && !game.isHandOver,
-            thinking: session.botThinking,
-            axis: Axis.horizontal,
-          ),
-          const Expanded(
-            child: Align(alignment: Alignment.centerRight, child: _Purse()),
+          Icon(icon, size: 16),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
           ),
         ],
       ),
@@ -1535,14 +1613,9 @@ class _HudBar extends ConsumerWidget {
 }
 
 class _ActionBar extends ConsumerWidget {
-  const _ActionBar({
-    required this.session,
-    required this.onSort,
-    this.dense = false,
-  });
+  const _ActionBar({required this.session, this.dense = false});
 
   final GameSession session;
-  final VoidCallback onSort;
 
   /// Landscape shows the same row, shorter. The actions sit directly above the
   /// rack in both shapes: they act on the tiles in it, so they belong beside
@@ -1580,15 +1653,6 @@ class _ActionBar extends ConsumerWidget {
                 ..clearSelection();
             }
           : null,
-    );
-    final sort = _Action(
-      icon: Icons.sort,
-      label: l10n.gameSort,
-      dense: dense,
-      // Sorting only rearranges the rack, so it is available whoever's turn it
-      // is - tidying the tiles while the bots play is most of what a player
-      // does with the waiting.
-      onPressed: onSort,
     );
     final undo = _Action(
       icon: Icons.undo,
@@ -1638,7 +1702,6 @@ class _ActionBar extends ConsumerWidget {
         alignment: WrapAlignment.center,
         runSpacing: dense ? 2 : 4,
         children: [
-          sort,
           undo,
           if (showWork) work,
           layMeld,

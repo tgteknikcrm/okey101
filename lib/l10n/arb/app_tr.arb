@@ -61,6 +61,8 @@
   "gameSort": "Sırala",
   "gameSortRuns": "Seriye göre",
   "gameSortSets": "Pere göre",
+  "gameSortRunsShort": "Seri",
+  "gameSortSetsShort": "Per",
   "gameOpenAction": "Aç",
   "gameLayMeld": "Masaya koy",
   "gameLayPairs": "Çiftleri koy",

@@ -61,6 +61,8 @@
   "gameSort": "Sort",
   "gameSortRuns": "By runs",
   "gameSortSets": "By sets",
+  "gameSortRunsShort": "Runs",
+  "gameSortSetsShort": "Sets",
   "gameOpenAction": "Open",
   "gameLayMeld": "Lay meld",
   "gameLayPairs": "Lay pairs",
