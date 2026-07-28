@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:okey101/domain/models/tile.dart';
 import 'package:okey101/features/game/game_session.dart';
 import 'package:okey101/features/game/widgets/rack_widget.dart';
+import 'package:okey101/features/game/widgets/tile_widget.dart';
 
 import '../domain/test_tiles.dart';
 
@@ -16,6 +17,7 @@ void main() {
     WidgetTester tester, {
     required Future<void> Function(WidgetTester tester, Rect rackRect) act,
     List<int?>? slots,
+    double? maxHeight,
   }) async {
     List<int?>? committed;
     final tapped = <int>[];
@@ -28,12 +30,12 @@ void main() {
             child: SizedBox(
               width: 390,
               child: RackWidget(
+                maxHeight: maxHeight,
                 slots: slots ?? RackLayout.fromTiles(hand),
                 tilesById: {for (final tile in hand) tile.id: tile},
                 selection: const <int>{},
                 okey: okey,
                 indicator: indicator,
-                animate: false,
                 onLayoutChanged: (value) => committed = value,
                 onTapTile: tapped.add,
               ),
@@ -120,11 +122,13 @@ void main() {
     expect(result.tapped, [red(5).id]);
   });
 
-  testWidgets('dragging a tile clear of the rack never discards it',
+  testWidgets('dragging a tile clear of the rack leaves it alone',
       (tester) async {
     // Releasing above the rack used to discard, which fired by accident every
-    // time a tile was moved from the bottom row to the top one. It now just
-    // rearranges: discarding is the button and nothing else.
+    // time a tile was moved from the bottom row to the top. Now a drop outside
+    // is reported to the board, which decides whether it landed on the discard
+    // pile - and either way the arrangement is untouched, so a throw that
+    // misses does not also scramble the rack.
     final result = await pumpRack(
       tester,
       act: (tester, rack) async {
@@ -135,12 +139,88 @@ void main() {
         await gesture.up();
       },
     );
+    expect(
+      result.committed,
+      isNull,
+      reason: 'a drop off the rack must not rearrange it',
+    );
+  });
+
+  testWidgets('nothing moves until the tile is put down', (tester) async {
+    // Tiles used to jump aside as the finger passed over them, some of them
+    // dropping to the other row, and the arrangement was rewritten on every
+    // frame. Only the carried tile moves now, and the rack is rearranged once,
+    // on release.
+    late List<int?> midDrag;
+    final result = await pumpRack(
+      tester,
+      act: (tester, rack) async {
+        final gesture = await tester.startGesture(slotCentre(rack, 0));
+        await tester.pump(const Duration(milliseconds: 30));
+        await gesture.moveTo(slotCentre(rack, 2));
+        await tester.pump(const Duration(milliseconds: 30));
+        await gesture.moveTo(slotCentre(rack, 3));
+        await tester.pump(const Duration(milliseconds: 30));
+        midDrag = tester.widget<RackWidget>(find.byType(RackWidget)).slots;
+        await gesture.up();
+      },
+    );
+
+    expect(
+      midDrag.take(5).toList(),
+      RackLayout.fromTiles(hand).take(5).toList(),
+      reason: 'the rack must not be rewritten while the finger is down',
+    );
+    final committed = result.committed;
+    expect(committed, isNotNull, reason: 'the drop should have committed');
+    // Red 3 was picked up from slot 0 and put down on slot 3, so the three it
+    // passed over shuffle down one to make room - the one from the left and
+    // one from the right that a player pushes apart.
+    expect(committed![3], red(3).id);
+    expect(committed[0], red(4).id);
+    expect(
+      committed.whereType<int>().toSet(),
+      hand.map((t) => t.id).toSet(),
+    );
+  });
+
+  testWidgets('a tile lands on the slot it was released over', (tester) async {
+    // With a height cap the rack is narrower than the band it sits in and is
+    // centred inside it. The drop point was being converted against the band
+    // rather than the tiles, so a tile released over the fourth slot went down
+    // on the eighth - and only when the cap was in play, which is every
+    // landscape phone and none of the tests until this one.
+    final result = await pumpRack(
+      tester,
+      // Low enough that the cap actually bites: at 390 wide the rack is 93
+      // tall by itself, so anything above that leaves it full width and the
+      // inset at zero - which is how this went unnoticed.
+      maxHeight: 70,
+      act: (tester, rack) async {
+        final tiles = find.descendant(
+          of: find.byType(RackWidget),
+          matching: find.byType(TileWidget),
+        );
+        final from = tester.getCenter(tiles.at(0));
+        final to = tester.getCenter(tiles.at(3));
+        final gesture = await tester.startGesture(from);
+        await tester.pump(const Duration(milliseconds: 30));
+        await gesture.moveTo(to);
+        await tester.pump(const Duration(milliseconds: 30));
+        await gesture.up();
+      },
+    );
+
     final committed = result.committed;
     expect(committed, isNotNull);
     expect(
-      committed!.whereType<int>().toSet(),
+      committed![3],
+      red(3).id,
+      reason: 'released over the fourth slot, so that is where it belongs',
+    );
+    expect(
+      committed.whereType<int>().toSet(),
       hand.map((t) => t.id).toSet(),
-      reason: 'no tile may leave the rack by being dragged off it',
     );
   });
 

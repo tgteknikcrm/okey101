@@ -30,7 +30,6 @@ class RackWidget extends StatefulWidget {
     this.onDragOut,
     this.colorblind = false,
     this.glyphFor,
-    this.animate = true,
     this.maxHeight,
   });
 
@@ -58,9 +57,6 @@ class RackWidget extends StatefulWidget {
   final bool colorblind;
   final String Function(TileColor)? glyphFor;
 
-  /// Off when the player has turned animations off in Settings.
-  final bool animate;
-
   /// Ceiling on the rack's own height.
   ///
   /// Sizing on width alone is fine in portrait, but a landscape phone is wide
@@ -78,7 +74,8 @@ class _RackWidgetState extends State<RackWidget> {
   static const double _rowGap = 6;
   static const double _padding = 6;
 
-  List<int?>? _working;
+  /// The slot the tile was picked up from. It does NOT change while the finger
+  /// moves: nothing on the rack is rearranged until the tile is put down.
   int? _draggingSlot;
   Offset _dragPosition = Offset.zero;
   Offset _grabOffset = Offset.zero;
@@ -102,7 +99,22 @@ class _RackWidgetState extends State<RackWidget> {
   int? _dragPointer;
   bool _extraPointer = false;
 
-  List<int?> get _slots => _working ?? widget.slots;
+  /// Where the owning finger last actually was, in global coordinates.
+  ///
+  /// Taken from the raw pointer stream rather than from the gesture callbacks:
+  /// the drag updates lag a fast flick badly. A tile carried across the rack
+  /// and released on the fourth slot was landing on the eighth - roughly the
+  /// midpoint of the swipe, which is how far behind the gesture layer was.
+  Offset? _lastPointerGlobal;
+
+  /// How far the tiles are inset inside this widget's own box.
+  ///
+  /// The gesture callbacks report positions relative to the padded child, but
+  /// globalToLocal on this State's render object reports them relative to the
+  /// whole band - and the rack is centred in that band whenever it is narrower,
+  /// which it is as soon as the height cap bites. Forgetting the difference put
+  /// a tile released on the fourth slot down on the eighth.
+  double _insetX = 0;
 
   /// Chrome the rack adds around the rows of tiles: the outer padding plus one
   /// gap between each pair of rows.
@@ -166,6 +178,7 @@ class _RackWidgetState extends State<RackWidget> {
                     cell.width * kRackColumns +
                     _gap * (kRackColumns - 1))) /
             2;
+        _insetX = inset > 0 ? inset : 0;
 
         return SizedBox(
           height: height,
@@ -189,9 +202,11 @@ class _RackWidgetState extends State<RackWidget> {
                 ],
               ),
               child: Listener(
-                onPointerDown: _handlePointerDown,
-                onPointerUp: _handlePointerRelease,
-                onPointerCancel: _handlePointerRelease,
+                onPointerDown: (event) => _handlePointerDown(event, cell),
+                onPointerMove: _handlePointerMove,
+                onPointerUp: (event) => _handlePointerRelease(event, cell),
+                onPointerCancel: (event) =>
+                    _handlePointerRelease(event, cell),
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTapUp: (details) =>
@@ -200,7 +215,7 @@ class _RackWidgetState extends State<RackWidget> {
                   onPanStart: (details) => _handlePanStart(details, cell),
                   onPanUpdate: (details) => _handlePanUpdate(details, cell),
                   onPanEnd: (details) =>
-                      _handlePanEnd(details.globalPosition),
+                      _handlePanEnd(details.globalPosition, cell),
                   onPanCancel: _cancelDrag,
                   child: Stack(
                     clipBehavior: Clip.none,
@@ -208,7 +223,7 @@ class _RackWidgetState extends State<RackWidget> {
                       for (var slot = 0; slot < kRackSlots; slot++)
                         _slotFrame(slot, cell),
                       for (var slot = 0; slot < kRackSlots; slot++)
-                        if (_slots[slot] != null && slot != _draggingSlot)
+                        if (widget.slots[slot] != null && slot != _draggingSlot)
                           _positionedTile(slot, cell),
                       if (_draggingSlot != null) _draggedTile(cell),
                     ],
@@ -239,15 +254,15 @@ class _RackWidgetState extends State<RackWidget> {
   }
 
   Widget _positionedTile(int slot, Size cell) {
-    final id = _slots[slot]!;
+    final id = widget.slots[slot]!;
     final tile = widget.tilesById[id];
     if (tile == null) return const SizedBox.shrink();
     final origin = _originOf(slot, cell);
-    return AnimatedPositioned(
+    // Plain Positioned, not animated. A tile moves when the player moves it and
+    // at no other time: gliding tiles around after the fact is the rack acting
+    // on its own, which is exactly what a physical istaka never does.
+    return Positioned(
       key: ValueKey<int>(id),
-      duration:
-          Duration(milliseconds: widget.animate ? 160 : 0),
-      curve: Curves.easeOutCubic,
       left: origin.dx,
       top: origin.dy,
       width: cell.width,
@@ -257,7 +272,7 @@ class _RackWidgetState extends State<RackWidget> {
   }
 
   Widget _draggedTile(Size cell) {
-    final id = _slots[_draggingSlot!];
+    final id = widget.slots[_draggingSlot!];
     if (id == null) return const SizedBox.shrink();
     final tile = widget.tilesById[id];
     if (tile == null) return const SizedBox.shrink();
@@ -296,12 +311,13 @@ class _RackWidgetState extends State<RackWidget> {
   void _handleTap(Offset local, Size cell) {
     final slot = _slotAt(local, cell);
     if (slot == null) return;
-    final id = _slots[slot];
+    final id = widget.slots[slot];
     if (id == null) return;
     widget.onTapTile(id);
   }
 
-  void _handlePointerDown(PointerDownEvent event) {
+  void _handlePointerDown(PointerDownEvent event, Size cell) {
+    _lastPointerGlobal = event.position;
     if (_dragPointer == null) {
       _dragPointer = event.pointer;
       _extraPointer = false;
@@ -311,22 +327,26 @@ class _RackWidgetState extends State<RackWidget> {
     // far, rather than letting the tile follow whichever finger the recogniser
     // happens to average out to.
     _extraPointer = true;
-    if (_draggingSlot != null) _handlePanEnd(event.position);
+    if (_draggingSlot != null) _handlePanEnd(event.position, cell);
   }
 
-  void _handlePointerRelease(PointerEvent event) {
+  void _handlePointerMove(PointerMoveEvent event) {
+    if (event.pointer == _dragPointer) _lastPointerGlobal = event.position;
+  }
+
+  void _handlePointerRelease(PointerEvent event, Size cell) {
     if (event.pointer != _dragPointer) return;
     _dragPointer = null;
     _extraPointer = false;
     // The finger that started the drag is up, so the drag is over - whatever
     // else is still touching the rack.
-    if (_draggingSlot != null) _handlePanEnd(event.position);
+    if (_draggingSlot != null) _handlePanEnd(event.position, cell);
   }
 
   void _handlePanDown(DragDownDetails details, Size cell) {
     final slot = _slotAt(details.localPosition, cell);
     _downPosition = details.localPosition;
-    _pendingSlot = slot != null && _slots[slot] != null ? slot : null;
+    _pendingSlot = slot != null && widget.slots[slot] != null ? slot : null;
     if (_pendingSlot != null) {
       _grabOffset = details.localPosition - _originOf(_pendingSlot!, cell);
     }
@@ -335,70 +355,77 @@ class _RackWidgetState extends State<RackWidget> {
   void _handlePanStart(DragStartDetails details, Size cell) {
     if (_extraPointer) return;
     final slot = _pendingSlot;
-    if (slot == null || _slots[slot] == null) return;
+    if (slot == null || widget.slots[slot] == null) return;
     setState(() {
-      _working = List<int?>.of(widget.slots);
       _draggingSlot = slot;
       _dragPosition = details.localPosition;
       _movedFar = false;
     });
-    // The pan may already have travelled before it was recognised, so treat the
-    // start position as a first update.
-    _updateDrag(details.localPosition, cell);
+    _updateDrag(details.localPosition);
   }
 
   void _handlePanUpdate(DragUpdateDetails details, Size cell) {
     if (_extraPointer || _draggingSlot == null) return;
-    _updateDrag(details.localPosition, cell);
+    _updateDrag(details.localPosition);
   }
 
-  void _updateDrag(Offset local, Size cell) {
-    final target = _nearestSlot(local, cell);
+  /// Only the carried tile moves. The rack underneath is left exactly as it
+  /// was until the finger lifts - tiles jumping aside as you pass over them,
+  /// some of them dropping to the other row, is what made arranging a rack
+  /// feel like fighting it.
+  void _updateDrag(Offset local) {
     setState(() {
       _dragPosition = local;
       final from = _downPosition;
       if (from != null && (local - from).distance > 8) _movedFar = true;
-      if (target != _draggingSlot) {
-        _working = RackLayout.move(_slots, _draggingSlot!, target);
-        _draggingSlot = target;
-      }
     });
   }
 
-  /// [globalPosition] is where the finger actually was when it came up.
-  ///
-  /// Not the last drag update: those lag behind a fast flick badly enough that
-  /// a tile released squarely on the discard pile reported a point 160 pixels
-  /// short of it.
-  void _handlePanEnd(Offset globalPosition) {
-    final slot = _draggingSlot;
-    final working = _working;
-    if (slot == null || working == null) {
+  /// Puts the tile down where the finger actually is.
+  void _handlePanEnd(Offset reported, Size cell) {
+    // The raw stream wins over whatever the gesture layer reports.
+    final globalPosition = _lastPointerGlobal ?? reported;
+    final source = _draggingSlot;
+    if (source == null) {
       _cancelDrag();
       return;
     }
 
-    final tileId = working[slot];
+    final tileId = widget.slots[source];
     final movedFar = _movedFar;
     setState(() {
       _draggingSlot = null;
-      _working = null;
       _pendingSlot = null;
       _downPosition = null;
     });
+    _lastPointerGlobal = null;
+    if (tileId == null) return;
 
-    if (movedFar) {
-      widget.onLayoutChanged(working);
-      final out = widget.onDragOut;
-      if (out != null && tileId != null && !_insideRack(globalPosition)) {
-        out(tileId, globalPosition);
-      }
+    if (!movedFar) {
+      // The pan won the arena but the finger barely moved, so the player meant
+      // a tap. Without this the touch is swallowed: the tap recogniser already
+      // lost and nothing at all happens, which reads as the rack ignoring you.
+      widget.onTapTile(tileId);
       return;
     }
-    // The pan won the arena but the finger barely moved, so the player meant a
-    // tap. Without this the touch is swallowed: the tap recogniser already lost
-    // and nothing at all happens, which reads as the rack ignoring you.
-    if (tileId != null) widget.onTapTile(tileId);
+
+    if (!_insideRack(globalPosition)) {
+      // Off the rack entirely. The board decides whether that lands on the
+      // discard pile; either way the arrangement is left alone, so a throw
+      // that misses does not also scramble the rack.
+      widget.onDragOut?.call(tileId, globalPosition);
+      return;
+    }
+
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null) return;
+    final local = box.globalToLocal(globalPosition) - Offset(_insetX, 0);
+    final target = _nearestSlot(local, cell);
+    if (target == source) return;
+    // RackLayout.move slides the tiles in between out of the way, which is the
+    // one from the left and one from the right that a player pushes apart to
+    // drop a tile into the middle.
+    widget.onLayoutChanged(RackLayout.move(widget.slots, source, target));
   }
 
   /// Whether the finger is still over the rack itself.
@@ -419,7 +446,6 @@ class _RackWidgetState extends State<RackWidget> {
   void _cancelDrag() {
     setState(() {
       _draggingSlot = null;
-      _working = null;
       _pendingSlot = null;
       _downPosition = null;
     });

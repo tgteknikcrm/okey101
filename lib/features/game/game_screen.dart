@@ -513,22 +513,16 @@ class _Board extends ConsumerWidget {
             controller.drawFromDiscard();
         }
       },
-      builder: (context, candidate, rejected) => AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
+      builder: (context, candidate, rejected) => Container(
         margin: const EdgeInsets.fromLTRB(6, 0, 6, 6),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(14),
-          // Two jobs for one border. Bright while a tile is being carried over
-          // the rack, so the player can see where it will land; and faintly lit
-          // whenever it is their move, which is the only signal left that the
-          // turn is theirs - the opponents have circles that light up, and the
-          // player has no circle at all.
+          // Lit only while a tile is being carried over the rack, so the player
+          // can see it is somewhere to drop one. It used to stay lit for the
+          // whole of the player's turn: a ring around the rack that never goes
+          // away reads as something being wrong, not as a hint.
           border: Border.all(
-            color: candidate.isNotEmpty
-                ? OkeyPalette.brass
-                : session.isHumanTurn
-                ? OkeyPalette.brass.withValues(alpha: 0.55)
-                : Colors.transparent,
+            color: candidate.isEmpty ? Colors.transparent : OkeyPalette.brass,
             width: 2,
           ),
         ),
@@ -540,7 +534,6 @@ class _Board extends ConsumerWidget {
           indicator: game.indicatorIdentity,
           colorblind: settings.colorblind,
           glyphFor: (color) => colorGlyph(l10n, color),
-          animate: settings.animations,
           maxHeight: maxHeight,
           onLayoutChanged: (slots) => onCommitLayout(session, slots),
           onTapTile: controller.toggleSelection,
