@@ -6,6 +6,7 @@ import 'package:okey101/core/feedback_service.dart';
 import 'package:okey101/data/local_store.dart';
 import 'package:okey101/data/models/app_settings.dart';
 import 'package:okey101/data/models/saved_game.dart';
+import 'package:okey101/data/models/wallet.dart';
 import 'package:okey101/domain/models/hand_result.dart';
 import 'package:okey101/domain/models/rule_set.dart';
 
@@ -30,6 +31,22 @@ final feedbackProvider = Provider<FeedbackService>(
 final settingsProvider = NotifierProvider<SettingsNotifier, AppSettings>(
   SettingsNotifier.new,
 );
+
+final walletProvider = NotifierProvider<WalletNotifier, Wallet>(
+  WalletNotifier.new,
+);
+
+class WalletNotifier extends Notifier<Wallet> {
+  @override
+  Wallet build() => ref.read(localStoreProvider).loadWallet();
+
+  /// Hands over a top-up. The game is free and sells nothing, so there is no
+  /// purchase to make and no receipt to check - the button simply gives.
+  void topUpGold() {
+    state = state.copyWith(gold: state.gold + Wallet.topUpAmount);
+    unawaited(ref.read(localStoreProvider).saveWallet(state));
+  }
+}
 
 class SettingsNotifier extends Notifier<AppSettings> {
   @override

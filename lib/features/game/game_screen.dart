@@ -2,12 +2,14 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:okey101/app/app.dart';
 import 'package:okey101/app/providers.dart';
 import 'package:okey101/app/theme.dart';
 import 'package:okey101/core/error_messages.dart';
 import 'package:okey101/core/tile_glyphs.dart';
 import 'package:okey101/core/wake_lock.dart';
 import 'package:okey101/data/models/app_settings.dart';
+import 'package:okey101/data/models/wallet.dart';
 import 'package:okey101/domain/models/game_state.dart';
 import 'package:okey101/domain/models/meld.dart';
 import 'package:okey101/domain/models/tile.dart';
@@ -484,12 +486,21 @@ class _Board extends ConsumerWidget {
         }
       },
       builder: (context, candidate, rejected) => AnimatedContainer(
-        duration: const Duration(milliseconds: 120),
+        duration: const Duration(milliseconds: 160),
         margin: const EdgeInsets.fromLTRB(6, 0, 6, 6),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(14),
+          // Two jobs for one border. Bright while a tile is being carried over
+          // the rack, so the player can see where it will land; and faintly lit
+          // whenever it is their move, which is the only signal left that the
+          // turn is theirs - the opponents have circles that light up, and the
+          // player has no circle at all.
           border: Border.all(
-            color: candidate.isEmpty ? Colors.transparent : OkeyPalette.brass,
+            color: candidate.isNotEmpty
+                ? OkeyPalette.brass
+                : session.isHumanTurn
+                    ? OkeyPalette.brass.withValues(alpha: 0.55)
+                    : Colors.transparent,
             width: 2,
           ),
         ),
@@ -694,15 +705,15 @@ class _SeatRail extends StatelessWidget {
     final game = session.state;
 
     Widget pile(int pileSeat) => _Pile(
-          session: session,
-          seat: pileSeat,
-          colorblind: colorblind,
-          width: tileWidth,
-          drawable: pileSeat == drawableSeat,
-          onDraw: pileSeat == drawableSeat ? onDraw : null,
-          slotKey: pileSeat == session.humanSeat ? discardKey : null,
-          label: pileSeat == drawableSeat ? l10n.gameTakeDiscard : null,
-        );
+      session: session,
+      seat: pileSeat,
+      colorblind: colorblind,
+      width: tileWidth,
+      drawable: pileSeat == drawableSeat,
+      onDraw: pileSeat == drawableSeat ? onDraw : null,
+      slotKey: pileSeat == session.humanSeat ? discardKey : null,
+      label: pileSeat == drawableSeat ? l10n.gameTakeDiscard : null,
+    );
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
@@ -752,7 +763,8 @@ class _Pile extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     final game = session.state;
     final top = game.players[seat].topDiscard;
-    final canDraw = drawable &&
+    final canDraw =
+        drawable &&
         session.isHumanTurn &&
         game.phase == TurnPhase.awaitingDraw &&
         top != null;
@@ -768,8 +780,9 @@ class _Pile extends StatelessWidget {
       // that does nothing just reads as a broken game.
       onTap: drawable ? onDraw : null,
       label: label,
-      colorblindGlyph:
-          colorblind && top?.color != null ? colorGlyph(l10n, top!.color!) : null,
+      colorblindGlyph: colorblind && top?.color != null
+          ? colorGlyph(l10n, top!.color!)
+          : null,
     );
 
     if (!drawable) return spot;
@@ -818,8 +831,12 @@ class _DraggableSource extends StatelessWidget {
   }
 }
 
-/// The top edge: the seat across the table, centred, with the way back and the
-/// two readings that used to live in a panel of their own tucked to the left.
+/// The top edge, doubling as the game's header: the way out and the settings
+/// on the left, the seat across the table centred, and the purse on the right.
+///
+/// It is one strip, not a header stacked on top of one. A landscape phone has
+/// 390 pixels of height and the rack and the actions already claim two fifths
+/// of it; a second row across the top would come straight out of the board.
 class _TopStrip extends ConsumerWidget {
   const _TopStrip({required this.session, required this.seat});
 
@@ -830,62 +847,19 @@ class _TopStrip extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final l10n = AppLocalizations.of(context);
     final game = session.state;
-    final controller = ref.read(gameControllerProvider.notifier);
-
-    final String openLine;
-    if (session.human.hasOpened) {
-      openLine = l10n.gameHudOpened;
-    } else {
-      openLine = l10n.gameHudOpenTarget(
-        game.ruleSet.openThresholdFor(game.openedCount),
-        controller.bestOpeningPoints(),
-      );
-    }
 
     return SizedBox(
       height: height,
       child: Row(
         children: [
           // Two equal flexible cells either side, so the seat opposite sits
-          // dead centre of the table however long the text beside it runs.
+          // dead centre of the table however wide the corners grow.
           Expanded(
             child: Row(
               children: [
                 _BackButton(session: session, dense: true),
-                Flexible(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        turnLine(l10n, session),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          height: 1.2,
-                          color: session.isHumanTurn
-                              ? OkeyPalette.brass
-                              : OkeyPalette.ivoryShade,
-                        ),
-                      ),
-                      Text(
-                        openLine,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 10,
-                          height: 1.2,
-                          color: OkeyPalette.ivoryShade,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                const _SettingsButton(),
               ],
             ),
           ),
@@ -895,10 +869,146 @@ class _TopStrip extends ConsumerWidget {
             thinking: session.botThinking,
             axis: Axis.horizontal,
           ),
-          const Expanded(child: SizedBox()),
+          const Expanded(
+            child: Align(alignment: Alignment.centerRight, child: _Purse()),
+          ),
         ],
       ),
     );
+  }
+}
+
+class _SettingsButton extends StatelessWidget {
+  const _SettingsButton();
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return IconButton(
+      tooltip: l10n.menuSettings,
+      iconSize: 18,
+      visualDensity: VisualDensity.compact,
+      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+      icon: const Icon(Icons.settings),
+      // Pushed on top of the table rather than replacing it, so the hand is
+      // still there when the player comes back.
+      onPressed: () => Navigator.of(context).pushNamed(Routes.settings),
+    );
+  }
+}
+
+/// Gold and diamonds, with the one button that adds to the pile.
+class _Purse extends ConsumerWidget {
+  const _Purse();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
+    final wallet = ref.watch(walletProvider);
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _Coin(
+          icon: Icons.monetization_on,
+          color: OkeyPalette.brass,
+          amount: wallet.gold,
+          tooltip: l10n.walletGold,
+          onAdd: () => _topUp(context, ref),
+        ),
+        const SizedBox(width: 6),
+        _Coin(
+          icon: Icons.diamond,
+          color: OkeyPalette.tileBlue,
+          amount: wallet.diamonds,
+          tooltip: l10n.walletDiamonds,
+        ),
+        const SizedBox(width: 4),
+      ],
+    );
+  }
+
+  void _topUp(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
+    ref.read(walletProvider.notifier).topUpGold();
+    ref.read(feedbackProvider).light();
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(l10n.walletTopUpBody(Wallet.topUpAmount)),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+  }
+}
+
+class _Coin extends StatelessWidget {
+  const _Coin({
+    required this.icon,
+    required this.color,
+    required this.amount,
+    required this.tooltip,
+    this.onAdd,
+  });
+
+  final IconData icon;
+  final Color color;
+  final int amount;
+  final String tooltip;
+
+  /// Only the gold has one.
+  final VoidCallback? onAdd;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: Container(
+        padding: EdgeInsets.fromLTRB(6, 2, onAdd == null ? 8 : 2, 2),
+        decoration: BoxDecoration(
+          color: const Color(0x22000000),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0x33FBF5E6)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 15, color: color),
+            const SizedBox(width: 4),
+            Text(
+              _formatted(amount),
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: OkeyPalette.ivory,
+              ),
+            ),
+            if (onAdd != null) ...[
+              const SizedBox(width: 2),
+              InkResponse(
+                onTap: onAdd,
+                radius: 16,
+                child: Icon(Icons.add_circle, size: 17, color: color),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Thousands separated with a dot, the Turkish convention. Done by hand
+  /// rather than through intl: the number is an integer count, not a
+  /// locale-sensitive measure, and this avoids a formatter per rebuild.
+  static String _formatted(int amount) {
+    final digits = amount.abs().toString();
+    final buffer = StringBuffer(amount < 0 ? '-' : '');
+    for (var i = 0; i < digits.length; i++) {
+      if (i > 0 && (digits.length - i) % 3 == 0) buffer.write('.');
+      buffer.write(digits[i]);
+    }
+    return buffer.toString();
   }
 }
 
@@ -1194,7 +1304,8 @@ class _DeckColumn extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final game = session.state;
-    final canDraw = session.isHumanTurn &&
+    final canDraw =
+        session.isHumanTurn &&
         game.phase == TurnPhase.awaitingDraw &&
         game.drawPile.isNotEmpty;
 

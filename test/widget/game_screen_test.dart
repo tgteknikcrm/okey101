@@ -6,6 +6,7 @@ import 'package:okey101/app/theme.dart';
 import 'package:okey101/data/local_store.dart';
 import 'package:okey101/data/models/app_settings.dart';
 import 'package:okey101/data/models/saved_game.dart';
+import 'package:okey101/data/models/wallet.dart';
 import 'package:okey101/domain/models/game_state.dart';
 import 'package:okey101/domain/models/meld.dart';
 import 'package:okey101/domain/models/tile.dart';
@@ -191,7 +192,8 @@ void main() {
 
     // The live indicator names the threshold and the best combination found.
     // The exact score depends on what the filler tiles happen to add, so only
-    // the shape of the line is asserted here.
+    // the shape of the line is asserted here. Portrait keeps the HUD panel;
+    // only the landscape board traded it for two corners.
     expect(find.textContaining('Açmak için: 101'), findsOneWidget);
     expect(
       find.textContaining('elinizdeki en iyi kombinasyon'),
@@ -228,7 +230,15 @@ void main() {
       find.widgetWithText(FilledButton, l10n.gameOpenAction),
       findsOneWidget,
     );
-    expect(find.textContaining('Açmak için: 101'), findsOneWidget);
+
+    // The header: the way out, the settings, and the purse.
+    expect(find.byIcon(Icons.arrow_back), findsOneWidget);
+    expect(find.byIcon(Icons.settings), findsOneWidget);
+    expect(find.byIcon(Icons.monetization_on), findsOneWidget);
+    expect(find.byIcon(Icons.diamond), findsOneWidget);
+    // One pile at each corner of the table, plus the three opponents' circles.
+    expect(find.byType(DiscardSpot), findsNWidgets(4));
+    expect(find.byType(SeatChip), findsNWidgets(3));
 
     // The rack must not eat the board: it is capped to a share of the height.
     final rack = tester.getSize(find.byType(RackWidget));
@@ -504,7 +514,23 @@ void main() {
     // Unsettled on purpose: settling would play the bot's turn out and hand
     // the move straight back, which is not the state under test.
     final l10n = await pumpGame(tester, state, settle: false);
-    expect(find.text(l10n.gameThinking(state.players[1].name)), findsOneWidget);
+    // It is a bot's turn, so the moves are refused - which is the state under
+    // test. The header no longer says so in words, so ask the buttons.
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.ancestor(
+              of: find.descendant(
+                of: find.byType(Wrap).first,
+                matching: find.text(l10n.gameDiscardPile),
+              ),
+              matching: find.byType(FilledButton),
+            ),
+          )
+          .onPressed,
+      isNull,
+      reason: 'the move should be refused: it is a bot playing',
+    );
 
     final before =
         List<int?>.of(tester.widget<RackWidget>(find.byType(RackWidget)).slots);
@@ -552,6 +578,37 @@ void main() {
 
     // Drain the bots so no think timer is left pending.
     await tester.pumpAndSettle(const Duration(minutes: 2));
+  });
+
+  testWidgets('loading gold adds to the purse and says where it came from',
+      (tester) async {
+    tester.view.physicalSize = const Size(844, 390);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final state = buildState(
+      indicator: indicator,
+      hands: buildHands(
+        indicator: indicator,
+        okey: okeyIdentity,
+        cores: [tooLow, const <Tile>[], const <Tile>[], const <Tile>[]],
+      ),
+    );
+    final l10n = await pumpGame(tester, state);
+
+    expect(find.text('5.000'), findsOneWidget, reason: 'the starting gold');
+    expect(find.text('10'), findsWidgets, reason: 'the starting diamonds');
+
+    await tester.tap(find.byIcon(Icons.add_circle));
+    await tester.pumpAndSettle();
+
+    expect(find.text('10.000'), findsOneWidget);
+    // The game sells nothing, and the message says so rather than pretending a
+    // purchase happened.
+    expect(
+      find.text(l10n.walletTopUpBody(Wallet.topUpAmount)),
+      findsOneWidget,
+    );
   });
 
   testWidgets('opening works on the landscape board too', (tester) async {

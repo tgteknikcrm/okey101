@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:okey101/data/models/app_settings.dart';
 import 'package:okey101/data/models/saved_game.dart';
+import 'package:okey101/data/models/wallet.dart';
 import 'package:okey101/domain/models/hand_result.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -21,6 +22,8 @@ class LocalStore {
   static const String settingsKey = 'okey101.settings.v1';
   static const String savedGameKey = 'okey101.savedGame.v1';
   static const String historyKey = 'okey101.history.v1';
+  static const String goldKey = 'okey101.gold.v1';
+  static const String diamondsKey = 'okey101.diamonds.v1';
 
   /// Keeping the history bounded keeps the whole store far under the quota.
   static const int maxHistoryEntries = 100;
@@ -44,6 +47,19 @@ class LocalStore {
 
   Future<void> saveSettings(AppSettings settings) =>
       _prefs.setString(settingsKey, jsonEncode(settings.toJson()));
+
+  // --- Wallet --------------------------------------------------------------
+
+  /// Two plain integers rather than a JSON blob: there is nothing to version.
+  Wallet loadWallet() => Wallet(
+        gold: _prefs.getInt(goldKey) ?? Wallet.startingGold,
+        diamonds: _prefs.getInt(diamondsKey) ?? Wallet.startingDiamonds,
+      );
+
+  Future<void> saveWallet(Wallet wallet) async {
+    await _prefs.setInt(goldKey, wallet.gold);
+    await _prefs.setInt(diamondsKey, wallet.diamonds);
+  }
 
   // --- In-progress game ----------------------------------------------------
 

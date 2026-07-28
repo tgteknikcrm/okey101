@@ -32,6 +32,12 @@
   "botNameAcross": "Kemal",
   "botNameLeft": "Nurten",
 
+  "walletGold": "Altın",
+  "walletDiamonds": "Elmas",
+  "walletTopUp": "Altın Yükle",
+  "walletTopUpTitle": "Altın Yükle",
+  "walletTopUpBody": "Okey 101 ücretsizdir ve hiçbir şey satmaz; altın ikramımız. {amount} altın eklendi.",
+  "@walletTopUpBody": { "placeholders": { "amount": { "type": "int" } } },
   "gameIndicator": "Gösterge",
   "gameOkey": "Okey",
   "gameFalseJoker": "Sahte Okey",

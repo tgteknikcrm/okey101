@@ -32,6 +32,12 @@
   "botNameAcross": "Kemal",
   "botNameLeft": "Nurten",
 
+  "walletGold": "Gold",
+  "walletDiamonds": "Elmas",
+  "walletTopUp": "Load gold",
+  "walletTopUpTitle": "Load gold",
+  "walletTopUpBody": "Okey 101 is free and sells nothing, so the gold is on the house. {amount} gold added.",
+  "@walletTopUpBody": { "placeholders": { "amount": { "type": "int" } } },
   "gameIndicator": "Indicator",
   "gameOkey": "Okey",
   "gameFalseJoker": "False joker",
