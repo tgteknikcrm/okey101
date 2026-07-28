@@ -21,6 +21,7 @@ class RackWidget extends StatefulWidget {
     required this.onLayoutChanged,
     required this.onTapTile,
     super.key,
+    this.onDragOut,
     this.colorblind = false,
     this.glyphFor,
     this.enabled = true,
@@ -37,6 +38,16 @@ class RackWidget extends StatefulWidget {
   /// Emitted once, on release, with the whole new arrangement.
   final ValueChanged<List<int?>> onLayoutChanged;
   final ValueChanged<int> onTapTile;
+
+  /// A tile was dragged clear of the rack and released, with the finger's
+  /// global position.
+  ///
+  /// The rack does NOT decide what that means. It used to: releasing eight
+  /// pixels above the top edge discarded the tile, which fired by accident
+  /// every time a tile was moved from the bottom row to the top one. Now it
+  /// reports the position and the board checks it against the discard pile,
+  /// so the throw only happens where the player aimed it.
+  final void Function(int tileId, Offset globalPosition)? onDragOut;
 
 
   final bool colorblind;
@@ -197,7 +208,8 @@ class _RackWidgetState extends State<RackWidget> {
                   // tracked pointers WITHOUT calling either terminal callback -
                   // so a tile caught by the turn changing was stranded on
                   // screen for good.
-                  onPanEnd: (_) => _handlePanEnd(),
+                  onPanEnd: (details) =>
+                      _handlePanEnd(details.globalPosition),
                   onPanCancel: _cancelDrag,
                   child: Stack(
                     clipBehavior: Clip.none,
@@ -308,7 +320,7 @@ class _RackWidgetState extends State<RackWidget> {
     // far, rather than letting the tile follow whichever finger the recogniser
     // happens to average out to.
     _extraPointer = true;
-    if (_draggingSlot != null) _handlePanEnd();
+    if (_draggingSlot != null) _handlePanEnd(event.position);
   }
 
   void _handlePointerRelease(PointerEvent event) {
@@ -317,7 +329,7 @@ class _RackWidgetState extends State<RackWidget> {
     _extraPointer = false;
     // The finger that started the drag is up, so the drag is over - whatever
     // else is still touching the rack.
-    if (_draggingSlot != null) _handlePanEnd();
+    if (_draggingSlot != null) _handlePanEnd(event.position);
   }
 
   void _handlePanDown(DragDownDetails details, Size cell) {
@@ -362,7 +374,12 @@ class _RackWidgetState extends State<RackWidget> {
     });
   }
 
-  void _handlePanEnd() {
+  /// [globalPosition] is where the finger actually was when it came up.
+  ///
+  /// Not the last drag update: those lag behind a fast flick badly enough that
+  /// a tile released squarely on the discard pile reported a point 160 pixels
+  /// short of it.
+  void _handlePanEnd(Offset globalPosition) {
     final slot = _draggingSlot;
     final working = _working;
     if (slot == null || working == null) {
@@ -381,12 +398,31 @@ class _RackWidgetState extends State<RackWidget> {
 
     if (movedFar) {
       widget.onLayoutChanged(working);
+      final out = widget.onDragOut;
+      if (out != null && tileId != null && !_insideRack(globalPosition)) {
+        out(tileId, globalPosition);
+      }
       return;
     }
     // The pan won the arena but the finger barely moved, so the player meant a
     // tap. Without this the touch is swallowed: the tap recogniser already lost
     // and nothing at all happens, which reads as the rack ignoring you.
     if (tileId != null) widget.onTapTile(tileId);
+  }
+
+  /// Whether the finger is still over the rack itself.
+  ///
+  /// Generous on the sides and the bottom, tight at the top: the table is up
+  /// there and that is the only direction a deliberate throw comes from.
+  bool _insideRack(Offset global) {
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null) return true;
+    final local = box.globalToLocal(global);
+    final size = box.size;
+    return local.dx >= -40 &&
+        local.dx <= size.width + 40 &&
+        local.dy >= -24 &&
+        local.dy <= size.height + 40;
   }
 
   void _cancelDrag() {

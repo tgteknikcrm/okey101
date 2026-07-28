@@ -34,6 +34,10 @@ class GameScreen extends ConsumerStatefulWidget {
 class _GameScreenState extends ConsumerState<GameScreen> {
   int? _focusedMeldId;
 
+  /// The player's own discard pile, so a tile dragged off the rack can be
+  /// checked against where it was actually dropped.
+  final GlobalKey _discardKey = GlobalKey();
+
   @override
   void initState() {
     super.initState();
@@ -100,6 +104,8 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                   onTapMeld: _handleMeldTap,
                   onTapMeldTile: _handleMeldTileTap,
                   onCommitLayout: _commitLayout,
+                  onDragOut: _handleDragOut,
+                  discardKey: _discardKey,
                 ),
               ),
             );
@@ -112,6 +118,29 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   void _commitLayout(GameSession session, List<int?> slots) {
     ref.read(feedbackProvider).light();
     ref.read(gameControllerProvider.notifier).setRackSlots(slots);
+  }
+
+  /// A tile dragged off the rack and dropped on the discard pile is thrown.
+  ///
+  /// This is the gesture the game is played with, and taking it away left the
+  /// discard button as the only way out - which is not where a hand goes. It
+  /// only fires over the pile itself, generously padded, so the accidental
+  /// throws that made it worth removing cannot come back.
+  void _handleDragOut(GameSession session, int tileId, Offset globalPosition) {
+    final box = _discardKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null) return;
+    final origin = box.localToGlobal(Offset.zero);
+    final target = Rect.fromLTWH(
+      origin.dx,
+      origin.dy,
+      box.size.width,
+      box.size.height,
+    ).inflate(28);
+    if (!target.contains(globalPosition)) return;
+    ref.read(feedbackProvider).light();
+    ref.read(gameControllerProvider.notifier)
+      ..discard(tileId)
+      ..clearSelection();
   }
 
   void _handleMeldTap(int meldId) {
@@ -139,9 +168,9 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       _handleMeldTap(meldId);
       return;
     }
-    final meld =
-        session.state.table.where((m) => m.id == meldId).firstOrNull;
-    final tappedIsWild = meld != null &&
+    final meld = session.state.table.where((m) => m.id == meldId).firstOrNull;
+    final tappedIsWild =
+        meld != null &&
         index >= 0 &&
         index < meld.jokerAssignments.length &&
         meld.jokerAssignments[index] != null;
@@ -186,6 +215,9 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   }
 }
 
+/// Where a dragged tile is being pulled from.
+enum _DrawSource { pile, discard }
+
 /// What the turn indicator should read.
 ///
 /// "Your turn" alone is a trap on the hand you deal first: that seat starts
@@ -210,6 +242,8 @@ class _Board extends ConsumerWidget {
     required this.onTapMeld,
     required this.onTapMeldTile,
     required this.onCommitLayout,
+    required this.onDragOut,
+    required this.discardKey,
   });
 
   final GameSession session;
@@ -219,6 +253,9 @@ class _Board extends ConsumerWidget {
   final ValueChanged<int> onTapMeld;
   final void Function(int meldId, int index) onTapMeldTile;
   final void Function(GameSession session, List<int?> slots) onCommitLayout;
+  final void Function(GameSession session, int tileId, Offset globalPosition)
+  onDragOut;
+  final GlobalKey discardKey;
 
   /// Width of the rails flanking the table in the landscape board.
   ///
@@ -332,6 +369,7 @@ class _Board extends ConsumerWidget {
                               session: session,
                               colorblind: settings.colorblind,
                               onDrawPile: controller.drawFromPile,
+                              discardKey: discardKey,
                             ),
                           ),
                           SizedBox(
@@ -379,6 +417,7 @@ class _Board extends ConsumerWidget {
           colorblind: settings.colorblind,
           onDrawPile: controller.drawFromPile,
           onDrawDiscard: controller.drawFromDiscard,
+          discardKey: discardKey,
         ),
         Expanded(
           child: Row(
@@ -424,21 +463,43 @@ class _Board extends ConsumerWidget {
     final controller = ref.read(gameControllerProvider.notifier);
     final game = session.state;
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(6, 0, 6, 6),
-      child: RackWidget(
-        slots: session.rackSlots,
-        tilesById: {for (final tile in session.human.hand) tile.id: tile},
-        selection: session.selection,
-        okey: game.okey,
-        indicator: game.indicatorIdentity,
-        colorblind: settings.colorblind,
-        glyphFor: (color) => colorGlyph(l10n, color),
-        enabled: session.isHumanTurn,
-        animate: settings.animations,
-        maxHeight: maxHeight,
-        onLayoutChanged: (slots) => onCommitLayout(session, slots),
-        onTapTile: controller.toggleSelection,
+    // The rack is where a tile pulled off a pile is dropped, which is how the
+    // game is actually played: take hold of the tile and bring it home.
+    return DragTarget<_DrawSource>(
+      onAcceptWithDetails: (details) {
+        ref.read(feedbackProvider).light();
+        switch (details.data) {
+          case _DrawSource.pile:
+            controller.drawFromPile();
+          case _DrawSource.discard:
+            controller.drawFromDiscard();
+        }
+      },
+      builder: (context, candidate, rejected) => AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        margin: const EdgeInsets.fromLTRB(6, 0, 6, 6),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: candidate.isEmpty ? Colors.transparent : OkeyPalette.brass,
+            width: 2,
+          ),
+        ),
+        child: RackWidget(
+          slots: session.rackSlots,
+          tilesById: {for (final tile in session.human.hand) tile.id: tile},
+          selection: session.selection,
+          okey: game.okey,
+          indicator: game.indicatorIdentity,
+          colorblind: settings.colorblind,
+          glyphFor: (color) => colorGlyph(l10n, color),
+          enabled: session.isHumanTurn,
+          animate: settings.animations,
+          maxHeight: maxHeight,
+          onLayoutChanged: (slots) => onCommitLayout(session, slots),
+          onTapTile: controller.toggleSelection,
+          onDragOut: (tileId, position) => onDragOut(session, tileId, position),
+        ),
       ),
     );
   }
@@ -511,8 +572,9 @@ class _BackButton extends ConsumerWidget {
       tooltip: l10n.commonBack,
       iconSize: dense ? 18 : 24,
       visualDensity: dense ? VisualDensity.compact : null,
-      constraints:
-          dense ? const BoxConstraints(minWidth: 32, minHeight: 32) : null,
+      constraints: dense
+          ? const BoxConstraints(minWidth: 32, minHeight: 32)
+          : null,
       icon: const Icon(Icons.arrow_back),
       onPressed: () {
         ref.read(gameControllerProvider.notifier).leave();
@@ -602,7 +664,8 @@ class _SeatRail extends StatelessWidget {
     final game = session.state;
     final player = game.players[seat];
     final top = player.topDiscard;
-    final canDraw = onDraw != null &&
+    final canDraw =
+        onDraw != null &&
         session.isHumanTurn &&
         game.phase == TurnPhase.awaitingDraw &&
         top != null;
@@ -623,25 +686,70 @@ class _SeatRail extends StatelessWidget {
                 thinking: session.botThinking,
               ),
               const SizedBox(height: 4),
-              DiscardSpot(
-                tile: top,
-                okey: game.okey,
-                width: tileWidth,
-                enabled: canDraw,
-                // Same as the deck: refused out loud, never in silence.
-                onTap: onDraw,
-                // Labelled whenever the pile is drawable at all, not only when
-                // it is drawable right now: a label that comes and goes moves
-                // the tile under the player's thumb.
-                label: onDraw != null ? l10n.gameTakeDiscard : null,
-                colorblindGlyph: colorblind && top?.color != null
-                    ? colorGlyph(l10n, top!.color!)
-                    : null,
+              _DraggableSource(
+                source: _DrawSource.discard,
+                enabled: onDraw != null,
+                feedback: top == null
+                    ? const SizedBox.shrink()
+                    : TileWidget(width: tileWidth, tile: top),
+                child: DiscardSpot(
+                  tile: top,
+                  okey: game.okey,
+                  width: tileWidth,
+                  enabled: canDraw,
+                  // Same as the deck: refused out loud, never in silence.
+                  onTap: onDraw,
+                  // Labelled whenever the pile is drawable at all, not only when
+                  // it is drawable right now: a label that comes and goes moves
+                  // the tile under the player's thumb.
+                  label: onDraw != null ? l10n.gameTakeDiscard : null,
+                  colorblindGlyph: colorblind && top?.color != null
+                      ? colorGlyph(l10n, top!.color!)
+                      : null,
+                ),
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Wraps a pile so a tile can be pulled off it with a finger.
+///
+/// Tapping still works - this only adds the gesture the game is actually
+/// played with, which is to take hold of a tile and drag it to the rack.
+class _DraggableSource extends StatelessWidget {
+  const _DraggableSource({
+    required this.source,
+    required this.feedback,
+    required this.child,
+    this.enabled = true,
+  });
+
+  final _DrawSource source;
+  final Widget feedback;
+  final Widget child;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!enabled) return child;
+    return Draggable<_DrawSource>(
+      data: source,
+      dragAnchorStrategy: pointerDragAnchorStrategy,
+      feedback: Transform.translate(
+        // Centred under the finger rather than hanging off it, so the tile
+        // being carried is the thing you are actually looking at.
+        offset: const Offset(-18, -26),
+        child: Material(
+          color: Colors.transparent,
+          child: Transform.scale(scale: 1.15, child: feedback),
+        ),
+      ),
+      childWhenDragging: Opacity(opacity: 0.4, child: child),
+      child: child,
     );
   }
 }
@@ -747,8 +855,10 @@ class _TopStrip extends StatelessWidget {
                   tooltip: l10n.scoreboard,
                   iconSize: 18,
                   visualDensity: VisualDensity.compact,
-                  constraints:
-                      const BoxConstraints(minWidth: 32, minHeight: 32),
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
+                  ),
                   icon: const Icon(Icons.list_alt),
                   onPressed: () => showScoreboard(context, session),
                 ),
@@ -813,12 +923,14 @@ class _CentreStrip extends ConsumerWidget {
     required this.colorblind,
     required this.onDrawPile,
     required this.onDrawDiscard,
+    required this.discardKey,
   });
 
   final GameSession session;
   final bool colorblind;
   final VoidCallback onDrawPile;
   final VoidCallback onDrawDiscard;
+  final GlobalKey discardKey;
 
   static const double _tileWidth = 34;
 
@@ -829,8 +941,7 @@ class _CentreStrip extends ConsumerWidget {
     final leftSeat = seatToLeftOf(session.humanSeat);
     final leftTop = game.players[leftSeat].topDiscard;
     final ownTop = game.players[session.humanSeat].topDiscard;
-    final canDraw =
-        session.isHumanTurn && game.phase == TurnPhase.awaitingDraw;
+    final canDraw = session.isHumanTurn && game.phase == TurnPhase.awaitingDraw;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -872,6 +983,7 @@ class _CentreStrip extends ConsumerWidget {
           ),
           Expanded(
             child: _Slot(
+              key: discardKey,
               label: l10n.gameDiscardPile,
               enabled: false,
               child: ownTop == null
@@ -891,10 +1003,11 @@ class _CentreStrip extends ConsumerWidget {
         kind: tile.isFalseJoker
             ? TileFaceKind.falseJoker
             : (tile.color == okey.color && tile.number == okey.number)
-                ? TileFaceKind.okey
-                : TileFaceKind.normal,
-        colorblindGlyph:
-            colorblind && tile.color != null ? colorGlyph(l10n, tile.color!) : null,
+            ? TileFaceKind.okey
+            : TileFaceKind.normal,
+        colorblindGlyph: colorblind && tile.color != null
+            ? colorGlyph(l10n, tile.color!)
+            : null,
       );
 }
 
@@ -903,6 +1016,7 @@ class _Slot extends StatelessWidget {
     required this.label,
     required this.child,
     required this.enabled,
+    super.key,
     this.compact = false,
     this.onTap,
   });
@@ -962,13 +1076,13 @@ class _EmptySlot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        width: width,
-        height: TileWidget.heightFor(width),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: const Color(0x33FBF5E6)),
-        ),
-      );
+    width: width,
+    height: TileWidget.heightFor(width),
+    decoration: BoxDecoration(
+      borderRadius: BorderRadius.circular(6),
+      border: Border.all(color: const Color(0x33FBF5E6)),
+    ),
+  );
 }
 
 class _TableArea extends ConsumerWidget {
@@ -989,18 +1103,17 @@ class _TableArea extends ConsumerWidget {
   /// Each seat gets a colour so a meld can say who laid it in the two pixels a
   /// grid cell can spare.
   static Color ownerColor(int seat) => switch (seat % 4) {
-        0 => OkeyPalette.brass,
-        1 => OkeyPalette.tileBlue,
-        2 => OkeyPalette.tileRed,
-        _ => OkeyPalette.success,
-      };
+    0 => OkeyPalette.brass,
+    1 => OkeyPalette.tileBlue,
+    2 => OkeyPalette.tileRed,
+    _ => OkeyPalette.success,
+  };
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
     final game = session.state;
-    final addable =
-        ref.read(gameControllerProvider.notifier).addableMeldIds();
+    final addable = ref.read(gameControllerProvider.notifier).addableMeldIds();
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(6, 2, 6, 2),
@@ -1040,11 +1153,16 @@ class _DeckColumn extends StatelessWidget {
     required this.session,
     required this.colorblind,
     required this.onDrawPile,
+    required this.discardKey,
   });
 
   final GameSession session;
   final bool colorblind;
   final VoidCallback onDrawPile;
+
+  /// Marks the player's own pile, which is the target a tile dragged off the
+  /// rack has to be dropped on.
+  final GlobalKey discardKey;
 
   static const double tileWidth = 30;
 
@@ -1053,7 +1171,8 @@ class _DeckColumn extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     final game = session.state;
     final ownTop = game.players[session.humanSeat].topDiscard;
-    final canDraw = session.isHumanTurn &&
+    final canDraw =
+        session.isHumanTurn &&
         game.phase == TurnPhase.awaitingDraw &&
         game.drawPile.isNotEmpty;
 
@@ -1069,15 +1188,19 @@ class _DeckColumn extends StatelessWidget {
           // browser toolbar showing - the column overflowed and the deck was
           // clipped to a fraction of its height. Tapping it did nothing, with
           // no scrollbar to explain why.
-          _DrawPile(
-            count: game.drawPile.length,
-            width: tileWidth,
-            enabled: canDraw,
-            // Tappable even when this is not the moment to draw. The engine
-            // refuses and says why; a control that does nothing at all just
-            // reads as a broken game, and that is exactly what got reported.
-            onTap: onDrawPile,
-            label: l10n.gameRemainingTiles(game.drawPile.length),
+          _DraggableSource(
+            source: _DrawSource.pile,
+            feedback: const TileWidget(width: tileWidth, faceDown: true),
+            child: _DrawPile(
+              count: game.drawPile.length,
+              width: tileWidth,
+              enabled: canDraw,
+              // Tappable even when this is not the moment to draw. The engine
+              // refuses and says why; a control that does nothing at all just
+              // reads as a broken game, and that is exactly what got reported.
+              onTap: onDrawPile,
+              label: l10n.gameRemainingTiles(game.drawPile.length),
+            ),
           ),
           // The player's own pile is a reading, so it is the one that gives way
           // when the rail is short.
@@ -1086,6 +1209,7 @@ class _DeckColumn extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: _Slot(
+                  key: discardKey,
                   label: l10n.gameDiscardPile,
                   enabled: false,
                   compact: true,
@@ -1097,9 +1221,9 @@ class _DeckColumn extends StatelessWidget {
                           kind: ownTop.isFalseJoker
                               ? TileFaceKind.falseJoker
                               : (ownTop.color == game.okey.color &&
-                                      ownTop.number == game.okey.number)
-                                  ? TileFaceKind.okey
-                                  : TileFaceKind.normal,
+                                    ownTop.number == game.okey.number)
+                              ? TileFaceKind.okey
+                              : TileFaceKind.normal,
                           colorblindGlyph: colorblind && ownTop.color != null
                               ? colorGlyph(l10n, ownTop.color!)
                               : null,
@@ -1293,8 +1417,9 @@ class _HudBar extends ConsumerWidget {
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: canFinish ? FontWeight.bold : FontWeight.normal,
-                  color:
-                      canFinish ? OkeyPalette.success : OkeyPalette.ivoryShade,
+                  color: canFinish
+                      ? OkeyPalette.success
+                      : OkeyPalette.ivoryShade,
                 ),
               ),
             ),
@@ -1415,8 +1540,8 @@ class _ActionBar extends ConsumerWidget {
       dense: dense,
       onPressed: canAct && selectionCount >= 2
           ? (session.human.hasOpened
-              ? controller.laySelectionAsMeld
-              : controller.stageSelection)
+                ? controller.laySelectionAsMeld
+                : controller.stageSelection)
           : null,
     );
     final layPairs = _Action(
@@ -1427,7 +1552,8 @@ class _ActionBar extends ConsumerWidget {
     );
     // "Islemek": the selected tiles go onto melds already on the table. It was
     // previously only reachable by tapping a meld, which nobody finds.
-    final canWork = canAct &&
+    final canWork =
+        canAct &&
         session.human.hasOpened &&
         !session.human.openedWithPairs &&
         controller.addableMeldIds().isNotEmpty;
@@ -1493,8 +1619,9 @@ class _Action extends StatelessWidget {
     // table. shrinkWrap lets the declared height stand.
     final size = dense ? const Size(0, 34) : const Size(64, 44);
     final padding = EdgeInsets.symmetric(horizontal: dense ? 8 : 12);
-    final tapTarget =
-        dense ? MaterialTapTargetSize.shrinkWrap : MaterialTapTargetSize.padded;
+    final tapTarget = dense
+        ? MaterialTapTargetSize.shrinkWrap
+        : MaterialTapTargetSize.padded;
 
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: dense ? 2 : 3),

@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:okey101/app/providers.dart';
 import 'package:okey101/app/theme.dart';
 import 'package:okey101/data/local_store.dart';
+import 'package:okey101/data/models/app_settings.dart';
 import 'package:okey101/data/models/saved_game.dart';
 import 'package:okey101/domain/models/game_state.dart';
 import 'package:okey101/domain/models/meld.dart';
@@ -56,7 +57,15 @@ void main() {
     WidgetTester tester,
     GameState state, {
     double textScale = 1.0,
+
+    /// Drops the bots' think delay to zero. A test whose move ends the human's
+    /// turn otherwise leaves that timer pending, and testWidgets fails any
+    /// test that does.
+    bool fastMode = false,
   }) async {
+    if (fastMode) {
+      await store.saveSettings(const AppSettings(fastMode: true));
+    }
     late AppLocalizations l10n;
     final container = ProviderContainer(
       overrides: [
@@ -401,6 +410,105 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text(l10n.errWrongPhase), findsOneWidget);
+  });
+
+  testWidgets('a tile can be pulled off the deck onto the rack',
+      (tester) async {
+    // Tapping works, but taking hold of a tile and dragging it home is how the
+    // game is played, and it was the missing gesture behind "I cannot draw
+    // from the deck".
+    tester.view.physicalSize = const Size(844, 390);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final state = buildState(
+      indicator: indicator,
+      hands: buildHands(
+        indicator: indicator,
+        okey: okeyIdentity,
+        cores: [tooLow, const <Tile>[], const <Tile>[], const <Tile>[]],
+      ),
+      phase: TurnPhase.awaitingDraw,
+    );
+    final l10n = await pumpGame(tester, state);
+
+    final before = state.drawPile.length;
+    final deck = find.text(l10n.gameRemainingTiles(before));
+    expect(deck, findsOneWidget);
+
+    final gesture =
+        await tester.startGesture(tester.getCenter(deck));
+    await tester.pump(const Duration(milliseconds: 40));
+    await gesture.moveTo(tester.getCenter(find.byType(RackWidget)));
+    await tester.pump(const Duration(milliseconds: 40));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(l10n.gameRemainingTiles(before - 1)),
+      findsOneWidget,
+      reason: 'dragging off the deck did not draw',
+    );
+  });
+
+  testWidgets('a rack tile dropped on the discard pile is thrown',
+      (tester) async {
+    // Releasing a drag anywhere above the rack used to discard, which fired by
+    // accident whenever a tile was moved between rows. Removing it took away
+    // the only gesture anyone uses to throw. It is back, but only over the
+    // pile itself.
+    tester.view.physicalSize = const Size(844, 390);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final state = buildState(
+      indicator: indicator,
+      hands: buildHands(
+        indicator: indicator,
+        okey: okeyIdentity,
+        cores: [tooLow, const <Tile>[], const <Tile>[], const <Tile>[]],
+        sizes: const [22, 21, 21, 21],
+      ),
+    );
+    final l10n = await pumpGame(tester, state, fastMode: true);
+
+    final rack = tester.getRect(find.byType(RackWidget));
+    final target = tester.getCenter(
+      find.ancestor(
+        of: find.text(l10n.gameDiscardPile).first,
+        matching: find.byType(Column),
+      ).first,
+    );
+
+    // The rack is height-capped in landscape, so it is narrower than its box
+    // and centred inside it: an offset from rack.left lands in the margin.
+    // Grab an actual tile instead.
+    expect(rack.width, greaterThan(0));
+    final firstTile = find
+        .descendant(
+          of: find.byType(RackWidget),
+          matching: find.byType(TileWidget),
+        )
+        .first;
+    final gesture = await tester.startGesture(tester.getCenter(firstTile));
+    await tester.pump(const Duration(milliseconds: 40));
+    await gesture.moveTo(target);
+    await tester.pump(const Duration(milliseconds: 40));
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(
+      state.players[0].hand.length,
+      22,
+      reason: 'the fixture should start with a tile to throw',
+    );
+    expect(
+      tester
+          .widget<RackWidget>(find.byType(RackWidget))
+          .tilesById
+          .length,
+      21,
+      reason: 'the tile dropped on the pile was not thrown',
+    );
   });
 
   testWidgets('opening works on the landscape board too', (tester) async {
