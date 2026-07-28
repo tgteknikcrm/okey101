@@ -30,7 +30,8 @@ flutter analyze
 flutter test
 
 echo "==> Build"
-flutter build web --release --base-href "$BASE_HREF"
+build_id="$(git rev-parse --short HEAD)"
+flutter build web --release --base-href "$BASE_HREF" \n  --dart-define=BUILD_ID="$build_id"
 
 source_sha="$(git rev-parse --short HEAD)"
 staging="$(mktemp -d)"

@@ -97,7 +97,7 @@
   "scoreboard": "Scoreboard",
 
   "errNotYourTurn": "It is not your turn.",
-  "errWrongPhase": "That move is not available right now.",
+  "errWrongPhase": "The order is: draw a tile first, then throw one.",
   "errTileNotInHand": "That tile is not in your hand.",
   "errDrawPileEmpty": "The draw pile is empty.",
   "errDiscardPileEmpty": "Your left neighbour's discard pile is empty.",

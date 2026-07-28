@@ -628,7 +628,8 @@ class _SeatRail extends StatelessWidget {
                 okey: game.okey,
                 width: tileWidth,
                 enabled: canDraw,
-                onTap: canDraw ? onDraw : null,
+                // Same as the deck: refused out loud, never in silence.
+                onTap: onDraw,
                 // Labelled whenever the pile is drawable at all, not only when
                 // it is drawable right now: a label that comes and goes moves
                 // the tile under the player's thumb.
@@ -1072,7 +1073,10 @@ class _DeckColumn extends StatelessWidget {
             count: game.drawPile.length,
             width: tileWidth,
             enabled: canDraw,
-            onTap: canDraw ? onDrawPile : null,
+            // Tappable even when this is not the moment to draw. The engine
+            // refuses and says why; a control that does nothing at all just
+            // reads as a broken game, and that is exactly what got reported.
+            onTap: onDrawPile,
             label: l10n.gameRemainingTiles(game.drawPile.length),
           ),
           // The player's own pile is a reading, so it is the one that gives way

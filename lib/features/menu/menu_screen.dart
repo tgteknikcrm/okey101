@@ -124,7 +124,18 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
           onPressed: () => _push(Routes.debug),
           child: Text(l10n.menuDebug, style: const TextStyle(fontSize: 12)),
         ),
+        // Which build is actually running. On the web a phone can sit on a
+        // cached copy for a while, so "I still see the old bug" and "the fix
+        // did not work" are otherwise impossible to tell apart.
+        const Text(
+          buildId,
+          style: TextStyle(fontSize: 10, color: OkeyPalette.ivoryShade),
+        ),
       ];
+
+  /// Stamped in by the publish script; "dev" in a local run.
+  static const String buildId =
+      String.fromEnvironment('BUILD_ID', defaultValue: 'dev');
 
   Future<void> _push(String route) async {
     await Navigator.of(context).pushNamed(route);

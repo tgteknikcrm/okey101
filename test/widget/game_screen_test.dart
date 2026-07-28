@@ -373,6 +373,36 @@ void main() {
     }
   });
 
+  testWidgets('tapping the deck after drawing explains the order',
+      (tester) async {
+    // The seat that deals starts with 22 tiles in the discard phase, so the
+    // deck is legitimately dead on that turn - two or three hands of every
+    // match. Silence there is what got reported as "I cannot draw".
+    tester.view.physicalSize = const Size(844, 390);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final state = buildState(
+      indicator: indicator,
+      hands: buildHands(
+        indicator: indicator,
+        okey: okeyIdentity,
+        cores: [tooLow, const <Tile>[], const <Tile>[], const <Tile>[]],
+        sizes: const [22, 21, 21, 21],
+      ),
+    );
+    final l10n = await pumpGame(tester, state);
+
+    final pile = find.ancestor(
+      of: find.text(l10n.gameRemainingTiles(state.drawPile.length)),
+      matching: find.byType(GestureDetector),
+    );
+    await tester.tap(pile.first, warnIfMissed: false);
+    await tester.pumpAndSettle();
+
+    expect(find.text(l10n.errWrongPhase), findsOneWidget);
+  });
+
   testWidgets('opening works on the landscape board too', (tester) async {
     tester.view.physicalSize = const Size(844, 390);
     tester.view.devicePixelRatio = 1;

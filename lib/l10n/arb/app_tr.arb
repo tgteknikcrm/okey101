@@ -97,7 +97,7 @@
   "scoreboard": "Çetele",
 
   "errNotYourTurn": "Sıra sizde değil.",
-  "errWrongPhase": "Bu hamle şu anda yapılamaz.",
+  "errWrongPhase": "Sıra şöyle: önce bir taş çekin, sonra bir taş atın.",
   "errTileNotInHand": "Bu taş elinizde değil.",
   "errDrawPileEmpty": "Deste boş.",
   "errDiscardPileEmpty": "Soldaki oyuncunun ıskartası boş.",

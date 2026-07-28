@@ -625,7 +625,15 @@ class GameController extends Notifier<GameSession?> {
   void _applyHuman(GameAction action) {
     final session = state;
     if (session == null) return;
-    if (session.state.currentSeat != session.humanSeat) return;
+    if (session.state.currentSeat != session.humanSeat) {
+      // Never fail silently. A control that does nothing at all when tapped is
+      // indistinguishable from a broken game, and it is the single most common
+      // thing players report. The engine already has a name for this.
+      state = session.copyWith(
+        lastError: GameError.notYourTurn(seat: session.state.currentSeat),
+      );
+      return;
+    }
 
     final result = GameEngine.apply(session.state, action);
     switch (result) {
@@ -723,7 +731,17 @@ class GameController extends Notifier<GameSession?> {
       if (current == null) return;
       final seat = current.state.currentSeat;
       final view = PlayerViewFactory.forSeat(current.state, seat);
-      final action = brains[seat].decide(view, _botRng);
+      GameAction action;
+      try {
+        action = brains[seat].decide(view, _botRng);
+      } on Object {
+        // A brain that throws would otherwise kill this loop on an unhandled
+        // async error, and the table would sit on that bot's turn for ever -
+        // every control disabled, surviving a reload, because restoring the
+        // save just runs the same brain into the same throw. A legal move
+        // keeps the game moving instead.
+        action = _legalMoveFor(current.state);
+      }
       final result = GameEngine.apply(current.state, action);
 
       final next = switch (result) {
@@ -758,20 +776,24 @@ class GameController extends Notifier<GameSession?> {
     }
   }
 
+  /// The dullest move that is always available: draw blind, or throw the first
+  /// tile that is allowed to go.
+  GameAction _legalMoveFor(GameState game) =>
+      game.phase == TurnPhase.awaitingDraw
+          ? const GameAction.drawFromPile()
+          : GameAction.discard(
+              tileId: game.currentPlayer.hand
+                  .firstWhere(
+                    (t) => t.id != game.takenFromDiscardTileId,
+                    orElse: () => game.currentPlayer.hand.first,
+                  )
+                  .id,
+            );
+
   /// A guaranteed-legal move for a bot that produced an illegal one, or null
   /// when even that is refused.
   GameState? _fallback(GameState game) {
-    final action = game.phase == TurnPhase.awaitingDraw
-        ? const GameAction.drawFromPile()
-        : GameAction.discard(
-            tileId: game.currentPlayer.hand
-                .firstWhere(
-                  (t) => t.id != game.takenFromDiscardTileId,
-                  orElse: () => game.currentPlayer.hand.first,
-                )
-                .id,
-          );
-    final result = GameEngine.apply(game, action);
+    final result = GameEngine.apply(game, _legalMoveFor(game));
     return result is EngineOk ? result.state : null;
   }
 
