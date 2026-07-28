@@ -1,0 +1,41 @@
+{
+    "name": "Okey 101",
+    "short_name": "Okey101",
+    "start_url": ".",
+    "scope": ".",
+    "display": "standalone",
+    "background_color": "#0F3D2E",
+    "theme_color": "#0F3D2E",
+    "description": "Yuzbir Okey - uc bota karsi, cevrimdisi oynanan tarayici oyunu.",
+    "orientation": "landscape",
+    "lang": "tr",
+    "dir": "ltr",
+    "categories": ["games", "entertainment"],
+    "prefer_related_applications": false,
+    "icons": [
+        {
+            "src": "icons/Icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "icons/Icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "icons/Icon-maskable-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "maskable"
+        },
+        {
+            "src": "icons/Icon-maskable-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable"
+        }
+    ]
+}
