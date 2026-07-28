@@ -336,11 +336,11 @@ class _Board extends ConsumerWidget {
                 child: _SeatRail(
                   session: session,
                   seat: leftSeat,
-                  // The seat across throws to the seat on the left, so its pile
-                  // sits under that circle; the left seat throws to the player,
-                  // so its pile sits below that again - nearest the rack, which
-                  // is the only pile anyone may take from.
-                  piles: [acrossSeat, leftSeat],
+                  // Top left is where the far seat and this one meet, bottom
+                  // left where this one and the player meet - and that lower
+                  // pile is the only one anyone may take from.
+                  pileAbove: acrossSeat,
+                  pileBelow: leftSeat,
                   drawableSeat: leftSeat,
                   onDraw: controller.drawFromDiscard,
                   colorblind: settings.colorblind,
@@ -349,12 +349,7 @@ class _Board extends ConsumerWidget {
               Expanded(
                 child: Column(
                   children: [
-                    _TopStrip(
-                      session: session,
-                      seat: acrossSeat,
-                      pileSeat: rightSeat,
-                      colorblind: settings.colorblind,
-                    ),
+                    _TopStrip(session: session, seat: acrossSeat),
                     Expanded(
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -397,10 +392,12 @@ class _Board extends ConsumerWidget {
                 child: _SeatRail(
                   session: session,
                   seat: rightSeat,
-                  // The player throws to the seat on their right, so their own
-                  // pile lives under that circle - which is also where a tile
-                  // dragged off the rack has to be dropped to be thrown.
-                  piles: [session.humanSeat],
+                  // Top right is where this seat and the far seat meet; bottom
+                  // right is where the player and this seat meet, so the
+                  // player's own pile goes there - which is also where a tile
+                  // dragged off the rack has to land to be thrown.
+                  pileAbove: rightSeat,
+                  pileBelow: session.humanSeat,
                   discardKey: discardKey,
                   colorblind: settings.colorblind,
                 ),
@@ -645,20 +642,25 @@ void showScoreboard(BuildContext context, GameSession session) {
   );
 }
 
-/// One opponent at their edge of the table: a small circle with their name,
-/// and under it the pile they draw from.
+/// One opponent at their edge of the table: their circle in the middle of it,
+/// with a discard pile above and another below.
 ///
-/// A discard pile belongs BETWEEN two players on a real table - the one who
-/// threw the tile and the one entitled to take it - and okey passes to the
-/// right, so the pile under a player is always the previous seat's. That makes
-/// the whole table one rotation: your throws land under the player on your
-/// right, theirs land at the top, the top seat's land on your left, and the
-/// pile you may take sits nearest you.
+/// A pile belongs at the CORNER between the two players it concerns - the one
+/// who threw the tile and the one entitled to take it. Okey passes to the
+/// right, so from this side of the table the tiles travel up the right-hand
+/// edge and back down the left: your throws land at the bottom right, the
+/// right-hand seat's at the top right, the far seat's at the top left, and the
+/// pile you may take sits at the bottom left, nearest your rack.
+///
+/// So there is no "above means thrown" rule to state. Each pile just sits
+/// where the two players who share it meet, and every profile ends up centred
+/// between the two piles that touch it.
 class _SeatRail extends StatelessWidget {
   const _SeatRail({
     required this.session,
     required this.seat,
-    required this.piles,
+    required this.pileAbove,
+    required this.pileBelow,
     required this.colorblind,
     this.drawableSeat,
     this.onDraw,
@@ -670,8 +672,9 @@ class _SeatRail extends StatelessWidget {
   /// Whose circle and name this rail shows.
   final int seat;
 
-  /// Discard piles stacked under the circle, by seat, top to bottom.
-  final List<int> piles;
+  /// The pile at the corner above, and the one at the corner below, by seat.
+  final int pileAbove;
+  final int pileBelow;
 
   final bool colorblind;
 
@@ -690,40 +693,33 @@ class _SeatRail extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     final game = session.state;
 
+    Widget pile(int pileSeat) => _Pile(
+          session: session,
+          seat: pileSeat,
+          colorblind: colorblind,
+          width: tileWidth,
+          drawable: pileSeat == drawableSeat,
+          onDraw: pileSeat == drawableSeat ? onDraw : null,
+          slotKey: pileSeat == session.humanSeat ? discardKey : null,
+          label: pileSeat == drawableSeat ? l10n.gameTakeDiscard : null,
+        );
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
-      // Centred while it fits, scrolled when it does not, rather than divided
-      // by Expanded: a fixed share of the rail clips as soon as the text scale
-      // goes above 1.0.
-      child: Center(
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SeatChip(
-                player: game.players[seat],
-                isCurrent: game.currentSeat == seat && !game.isHandOver,
-                thinking: session.botThinking,
-              ),
-              for (final pileSeat in piles)
-                Padding(
-                  padding: const EdgeInsets.only(top: 3),
-                  child: _Pile(
-                    session: session,
-                    seat: pileSeat,
-                    colorblind: colorblind,
-                    width: tileWidth,
-                    drawable: pileSeat == drawableSeat,
-                    onDraw: pileSeat == drawableSeat ? onDraw : null,
-                    slotKey: pileSeat == session.humanSeat ? discardKey : null,
-                    label: pileSeat == drawableSeat
-                        ? l10n.gameTakeDiscard
-                        : null,
-                  ),
-                ),
-            ],
+      // spaceBetween across three children: a pile at each end and the circle
+      // in the middle. The two piles are the same height, so the circle lands
+      // dead centre of the edge.
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          pile(pileAbove),
+          SeatChip(
+            player: game.players[seat],
+            isCurrent: game.currentSeat == seat && !game.isHandOver,
+            thinking: session.botThinking,
           ),
-        ),
+          pile(pileBelow),
+        ],
       ),
     );
   }
@@ -740,7 +736,6 @@ class _Pile extends StatelessWidget {
     this.onDraw,
     this.slotKey,
     this.label,
-    this.minTouchSize = 46,
   });
 
   final GameSession session;
@@ -751,7 +746,6 @@ class _Pile extends StatelessWidget {
   final VoidCallback? onDraw;
   final GlobalKey? slotKey;
   final String? label;
-  final double minTouchSize;
 
   @override
   Widget build(BuildContext context) {
@@ -774,7 +768,6 @@ class _Pile extends StatelessWidget {
       // that does nothing just reads as a broken game.
       onTap: drawable ? onDraw : null,
       label: label,
-      minTouchSize: minTouchSize,
       colorblindGlyph:
           colorblind && top?.color != null ? colorGlyph(l10n, top!.color!) : null,
     );
@@ -825,26 +818,15 @@ class _DraggableSource extends StatelessWidget {
   }
 }
 
-/// The top edge: the seat across the table, with the pile it draws from under
-/// it, and the way back tucked into the corner.
+/// The top edge: the seat across the table, centred, with the way back and the
+/// two readings that used to live in a panel of their own tucked to the left.
 class _TopStrip extends ConsumerWidget {
-  const _TopStrip({
-    required this.session,
-    required this.seat,
-    required this.pileSeat,
-    required this.colorblind,
-  });
+  const _TopStrip({required this.session, required this.seat});
 
   final GameSession session;
   final int seat;
 
-  /// Whose discards sit under that circle. Always the seat before it: a pile
-  /// belongs between the player who threw the tile and the one who may take it.
-  final int pileSeat;
-
-  final bool colorblind;
-
-  static const double height = 68;
+  static const double height = 46;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -866,69 +848,54 @@ class _TopStrip extends ConsumerWidget {
       height: height,
       child: Row(
         children: [
-          _BackButton(session: session, dense: true),
-          // Whose turn it is and how far off opening the rack is, in the corner
-          // as plain text. It used to be a panel of its own across the bottom,
-          // which is a row the table wanted more.
+          // Two equal flexible cells either side, so the seat opposite sits
+          // dead centre of the table however long the text beside it runs.
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
+            child: Row(
               children: [
-                Text(
-                  turnLine(l10n, session),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    height: 1.2,
-                    color: session.isHumanTurn
-                        ? OkeyPalette.brass
-                        : OkeyPalette.ivoryShade,
-                  ),
-                ),
-                Text(
-                  openLine,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 10,
-                    height: 1.2,
-                    color: OkeyPalette.ivoryShade,
+                _BackButton(session: session, dense: true),
+                Flexible(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        turnLine(l10n, session),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          height: 1.2,
+                          color: session.isHumanTurn
+                              ? OkeyPalette.brass
+                              : OkeyPalette.ivoryShade,
+                        ),
+                      ),
+                      Text(
+                        openLine,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 10,
+                          height: 1.2,
+                          color: OkeyPalette.ivoryShade,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
           ),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 240),
-            // Stacked, like the side rails: the pile a player draws from sits
-            // in front of them, which from this side of the table means under
-            // their circle.
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                SeatChip(
-                  player: game.players[seat],
-                  isCurrent: game.currentSeat == seat && !game.isHandOver,
-                  thinking: session.botThinking,
-                  axis: Axis.horizontal,
-                ),
-                _Pile(
-                  session: session,
-                  seat: pileSeat,
-                  colorblind: colorblind,
-                  width: 20,
-                  minTouchSize: 28,
-                ),
-              ],
-            ),
+          SeatChip(
+            player: game.players[seat],
+            isCurrent: game.currentSeat == seat && !game.isHandOver,
+            thinking: session.botThinking,
+            axis: Axis.horizontal,
           ),
-          // Balances the back button so the seat opposite sits centred.
-          const SizedBox(width: 32),
+          const Expanded(child: SizedBox()),
         ],
       ),
     );

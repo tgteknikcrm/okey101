@@ -438,15 +438,16 @@ void main() {
     await pumpGame(tester, state, fastMode: true);
 
     final rack = tester.getRect(find.byType(RackWidget));
-    // The player's own pile is the rightmost one on the table: it sits under
-    // the seat on their right, which is the seat entitled to take it.
+    // The player's own pile is at the bottom right corner: that is where they
+    // and the seat on their right meet, and that seat is the one entitled to
+    // take it. The right rail holds two piles, so height decides between them.
     final spots = find.byType(DiscardSpot).evaluate().toList()
-      ..sort(
-        (a, b) => tester
-            .getCenter(find.byWidget(a.widget))
-            .dx
-            .compareTo(tester.getCenter(find.byWidget(b.widget)).dx),
-      );
+      ..sort((a, b) {
+        final left = tester.getCenter(find.byWidget(a.widget));
+        final right = tester.getCenter(find.byWidget(b.widget));
+        final byColumn = left.dx.compareTo(right.dx);
+        return byColumn != 0 ? byColumn : left.dy.compareTo(right.dy);
+      });
     final target = tester.getCenter(find.byWidget(spots.last.widget));
 
     // The rack is height-capped in landscape, so it is narrower than its box
