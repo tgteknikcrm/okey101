@@ -62,6 +62,10 @@ void main() {
     /// turn otherwise leaves that timer pending, and testWidgets fails any
     /// test that does.
     bool fastMode = false,
+
+    /// Leaves the bots mid-think instead of settling. Settling plays their
+    /// whole turn out, and with fastMode it plays the entire hand.
+    bool settle = true,
   }) async {
     if (fastMode) {
       await store.saveSettings(const AppSettings(fastMode: true));
@@ -105,7 +109,12 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    if (settle) {
+      await tester.pumpAndSettle();
+    } else {
+      await tester.pump();
+      await tester.pump();
+    }
     return l10n;
   }
 
@@ -509,6 +518,79 @@ void main() {
       21,
       reason: 'the tile dropped on the pile was not thrown',
     );
+  });
+
+  testWidgets('the rack still works while an opponent is playing',
+      (tester) async {
+    // Exactly the reported sequence: you throw a tile, the turn goes round to
+    // the opponents, and now you cannot touch your own tiles. Arranging the
+    // rack is not a move - the engine never learns about slots, and none of
+    // the controller's layout methods look at the turn - so it had no business
+    // being locked to it.
+    tester.view.physicalSize = const Size(844, 390);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final state = buildState(
+      indicator: indicator,
+      hands: buildHands(
+        indicator: indicator,
+        okey: okeyIdentity,
+        cores: [tooLow, const <Tile>[], const <Tile>[], const <Tile>[]],
+      ),
+      currentSeat: 1,
+    );
+    // Unsettled on purpose: settling would play the bot's turn out and hand
+    // the move straight back, which is not the state under test.
+    final l10n = await pumpGame(tester, state, settle: false);
+    expect(find.text(l10n.gameThinking(state.players[1].name)), findsOneWidget);
+
+    final before =
+        List<int?>.of(tester.widget<RackWidget>(find.byType(RackWidget)).slots);
+    final rack = tester.getRect(find.byType(RackWidget));
+    final from = tester.getCenter(
+      find
+          .descendant(
+            of: find.byType(RackWidget),
+            matching: find.byType(TileWidget),
+          )
+          .first,
+    );
+    final gesture = await tester.startGesture(from);
+    await tester.pump(const Duration(milliseconds: 40));
+    await gesture.moveTo(Offset(from.dx + 140, rack.center.dy));
+    await tester.pump(const Duration(milliseconds: 40));
+    await gesture.up();
+    await tester.pump();
+
+    final after = tester.widget<RackWidget>(find.byType(RackWidget)).slots;
+    expect(
+      after,
+      isNot(before),
+      reason: 'the rack refused an arrangement while a bot was playing',
+    );
+    expect(
+      after.whereType<int>().toSet(),
+      before.whereType<int>().toSet(),
+      reason: 'rearranging must not lose or gain a tile',
+    );
+
+    // Sorting is the same kind of thing, and was locked the same way.
+    expect(
+      tester
+          .widget<OutlinedButton>(
+            find.ancestor(
+              of: find.text(l10n.gameSort),
+              matching: find.byType(OutlinedButton),
+            ),
+          )
+          .onPressed,
+      isNotNull,
+      reason: 'sort is a rack arrangement, not a move',
+    );
+
+    // Drain the bots so no think timer is left pending.
+    await tester.pumpAndSettle(const Duration(minutes: 2));
   });
 
   testWidgets('opening works on the landscape board too', (tester) async {

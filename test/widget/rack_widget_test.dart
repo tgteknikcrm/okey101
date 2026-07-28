@@ -16,7 +16,6 @@ void main() {
     WidgetTester tester, {
     required Future<void> Function(WidgetTester tester, Rect rackRect) act,
     List<int?>? slots,
-    bool enabled = true,
   }) async {
     List<int?>? committed;
     final tapped = <int>[];
@@ -34,7 +33,6 @@ void main() {
                 selection: const <int>{},
                 okey: okey,
                 indicator: indicator,
-                enabled: enabled,
                 animate: false,
                 onLayoutChanged: (value) => committed = value,
                 onTapTile: tapped.add,
@@ -176,73 +174,24 @@ void main() {
     expect(result.committed, isNotNull, reason: 'the drag should have landed');
   });
 
-  testWidgets('a rack disabled mid-drag still releases the tile',
-      (tester) async {
-    // A GestureDetector drops its recogniser once every pan callback is null,
-    // and disposing one mid-drag clears its tracked pointers without calling
-    // either terminal callback - so the tile was stranded for good when the
-    // turn ended under the player's finger.
-    late StateSetter setEnabled;
-    var enabled = true;
-    List<int?>? committed;
-
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: StatefulBuilder(
-            builder: (context, setState) {
-              setEnabled = setState;
-              return Align(
-                alignment: Alignment.bottomCenter,
-                child: SizedBox(
-                  width: 390,
-                  child: RackWidget(
-                    slots: RackLayout.fromTiles(hand),
-                    tilesById: {for (final tile in hand) tile.id: tile},
-                    selection: const <int>{},
-                    okey: okey,
-                    indicator: indicator,
-                    enabled: enabled,
-                    animate: false,
-                    onLayoutChanged: (value) => committed = value,
-                    onTapTile: (_) {},
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    final rack = tester.getRect(find.byType(RackWidget));
-    final gesture = await tester.startGesture(slotCentre(rack, 0));
-    await tester.pump(const Duration(milliseconds: 20));
-    await gesture.moveTo(slotCentre(rack, 3));
-    await tester.pump(const Duration(milliseconds: 20));
-    setEnabled(() => enabled = false);
-    await tester.pump();
-    await gesture.up();
-    await tester.pumpAndSettle();
-
-    expect(find.byKey(const ValueKey<String>('dragged')), findsNothing);
-    expect(committed, isNotNull);
-  });
-
-  testWidgets('a disabled rack ignores taps and drags', (tester) async {
+  testWidgets('the rack arranges out of turn as well as in it', (tester) async {
+    // The rack used to be locked to the player's own turn, so for the three
+    // bot turns between each of yours you could not touch your own tiles.
+    // Arranging them is not a move - the engine never learns about slots - and
+    // it is the whole of what a player does while waiting.
     final result = await pumpRack(
       tester,
-      enabled: false,
       act: (tester, rack) async {
         await tester.tapAt(slotCentre(rack, 1));
         final gesture = await tester.startGesture(slotCentre(rack, 0));
+        await tester.pump(const Duration(milliseconds: 30));
         await gesture.moveTo(slotCentre(rack, 4));
+        await tester.pump(const Duration(milliseconds: 30));
         await gesture.up();
       },
     );
-    expect(result.tapped, isEmpty);
-    expect(result.committed, isNull);
+    expect(result.tapped, [red(4).id]);
+    expect(result.committed, isNotNull);
   });
 
   testWidgets('an empty slot is not draggable', (tester) async {

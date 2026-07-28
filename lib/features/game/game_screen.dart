@@ -145,7 +145,10 @@ class _GameScreenState extends ConsumerState<GameScreen> {
 
   void _handleMeldTap(int meldId) {
     final session = ref.read(gameControllerProvider);
-    if (session == null || !session.isHumanTurn) return;
+    if (session == null) return;
+    // No turn check. Highlighting a meld is just looking at it, and working a
+    // tile onto one goes through the controller, which refuses out of turn and
+    // says so. Returning here did neither.
     if (session.selection.length == 1) {
       // "Islemek": work the selected tile onto this meld, at whichever end it
       // actually fits.
@@ -163,7 +166,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   /// is working a tile onto that meld.
   void _handleMeldTileTap(int meldId, int index) {
     final session = ref.read(gameControllerProvider);
-    if (session == null || !session.isHumanTurn) return;
+    if (session == null) return;
     if (session.selection.length != 1) {
       _handleMeldTap(meldId);
       return;
@@ -493,7 +496,6 @@ class _Board extends ConsumerWidget {
           indicator: game.indicatorIdentity,
           colorblind: settings.colorblind,
           glyphFor: (color) => colorGlyph(l10n, color),
-          enabled: session.isHumanTurn,
           animate: settings.animations,
           maxHeight: maxHeight,
           onLayoutChanged: (slots) => onCommitLayout(session, slots),
@@ -1526,7 +1528,10 @@ class _ActionBar extends ConsumerWidget {
       icon: Icons.sort,
       label: l10n.gameSort,
       dense: dense,
-      onPressed: session.isHumanTurn ? onSort : null,
+      // Sorting only rearranges the rack, so it is available whoever's turn it
+      // is - tidying the tiles while the bots play is most of what a player
+      // does with the waiting.
+      onPressed: onSort,
     );
     final undo = _Action(
       icon: Icons.undo,

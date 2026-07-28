@@ -11,6 +11,12 @@ import 'package:okey101/features/game/widgets/tile_widget.dart';
 /// Tiles are absolutely positioned so a drag can move one anywhere without the
 /// layout reflowing underneath it. Reordering happens on a working copy while
 /// the finger is down and is committed once, on release.
+///
+/// It is ALWAYS live, whoever's turn it is. Arranging the rack is not a move -
+/// the engine never learns about slots, and none of the controller's layout or
+/// selection methods look at the turn. Locking it while the three bots played
+/// meant the player could not touch their own tiles for most of the hand,
+/// which is the whole of what you do while waiting.
 class RackWidget extends StatefulWidget {
   const RackWidget({
     required this.slots,
@@ -24,7 +30,6 @@ class RackWidget extends StatefulWidget {
     this.onDragOut,
     this.colorblind = false,
     this.glyphFor,
-    this.enabled = true,
     this.animate = true,
     this.maxHeight,
   });
@@ -52,7 +57,6 @@ class RackWidget extends StatefulWidget {
 
   final bool colorblind;
   final String Function(TileColor)? glyphFor;
-  final bool enabled;
 
   /// Off when the player has turned animations off in Settings.
   final bool animate;
@@ -190,24 +194,11 @@ class _RackWidgetState extends State<RackWidget> {
                 onPointerCancel: _handlePointerRelease,
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
-                  onTapUp: (details) {
-                    if (widget.enabled) _handleTap(details.localPosition, cell);
-                  },
-                  onPanDown: (details) {
-                    if (widget.enabled) _handlePanDown(details, cell);
-                  },
-                  onPanStart: (details) {
-                    if (widget.enabled) _handlePanStart(details, cell);
-                  },
-                  onPanUpdate: (details) {
-                    if (widget.enabled) _handlePanUpdate(details, cell);
-                  },
-                  // Never null, even when the rack is disabled. A
-                  // GestureDetector drops the recogniser entirely once every
-                  // pan callback is null, and disposing it mid-drag clears its
-                  // tracked pointers WITHOUT calling either terminal callback -
-                  // so a tile caught by the turn changing was stranded on
-                  // screen for good.
+                  onTapUp: (details) =>
+                      _handleTap(details.localPosition, cell),
+                  onPanDown: (details) => _handlePanDown(details, cell),
+                  onPanStart: (details) => _handlePanStart(details, cell),
+                  onPanUpdate: (details) => _handlePanUpdate(details, cell),
                   onPanEnd: (details) =>
                       _handlePanEnd(details.globalPosition),
                   onPanCancel: _cancelDrag,
