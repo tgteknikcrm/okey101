@@ -16,13 +16,40 @@ void main() {
       expect(moved[5], 10);
     });
 
-    test('inserting before an occupied slot slides the others along', () {
+    test('dropping on an occupied slot shoves it to the nearest gap', () {
       final slots = RackLayout.empty();
       slots[0] = 1;
       slots[1] = 2;
       slots[2] = 3;
+      // Tile 1 is put down on tile 3. The nearest gap is slot 3, so 3 steps
+      // right and nothing else moves - tile 2 stays exactly where it was.
       final moved = RackLayout.move(slots, 0, 2);
-      expect(moved.take(3).toList(), [2, 3, 1]);
+      expect(moved.take(4).toList(), [null, 2, 1, 3]);
+    });
+
+    test('a full row trades places instead of shoving the whole rack', () {
+      // The shape a hand is dealt in: the top row full, the bottom row part
+      // filled. Carrying the last tile up into the top row used to rotate
+      // every slot in between - seventeen tiles moving because one was
+      // dropped, which is what made the rack look like it exploded.
+      final slots = RackLayout.empty();
+      for (var i = 0; i < kRackColumns; i++) {
+        slots[i] = 100 + i;
+      }
+      for (var i = 0; i < 8; i++) {
+        slots[kRackColumns + i] = 200 + i;
+      }
+      final before = List<int?>.of(slots);
+
+      final moved = RackLayout.move(slots, kRackColumns + 7, 3);
+      expect(moved[3], 207, reason: 'the carried tile lands where it was put');
+      expect(moved[kRackColumns + 7], 103, reason: 'they trade places');
+
+      final disturbed = <int>[
+        for (var i = 0; i < kRackSlots; i++)
+          if (moved[i] != before[i]) i,
+      ];
+      expect(disturbed, [3, kRackColumns + 7], reason: 'only those two move');
     });
 
     test('moving left shifts the block right', () {

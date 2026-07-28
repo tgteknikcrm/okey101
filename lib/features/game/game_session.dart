@@ -139,10 +139,22 @@ abstract final class RackLayout {
     return next;
   }
 
-  /// Moves the tile in [from] to [to], sliding the tiles in between along.
+  /// Puts the tile from [from] down on [to], shoving the neighbours aside.
   ///
-  /// Dropping onto an empty slot just relocates the tile; dropping onto an
-  /// occupied one inserts before it, which is what makes reordering feel right.
+  /// Dropping on an empty slot just relocates the tile. Dropping on an occupied
+  /// one pushes that tile and its neighbours towards the NEAREST GAP IN THE
+  /// SAME ROW, and no further - one tile from the left or one from the right
+  /// steps aside and the rest of the rack does not move.
+  ///
+  /// The obvious version - rotate everything between the two slots - looks
+  /// right in a single row and falls apart across two. Carrying the last tile
+  /// of the bottom row up to the fourth slot of a full top row moved seventeen
+  /// tiles: the whole of the top row shifted along, its last tile dropped into
+  /// the bottom row, and the bottom row shifted with it. One tile moved and the
+  /// rack appeared to explode.
+  ///
+  /// When the target row is full end to end nothing in it can step aside, so
+  /// the two tiles simply trade places. At most two tiles ever move.
   static List<int?> move(List<int?> slots, int from, int to) {
     if (from == to || from < 0 || to < 0) return slots;
     if (from >= slots.length || to >= slots.length) return slots;
@@ -150,25 +162,54 @@ abstract final class RackLayout {
     final moving = next[from];
     if (moving == null) return slots;
 
+    // Freeing the source first matters: it may itself be the gap the shove
+    // needs, which is the common case of nudging a tile along its own row.
+    next[from] = null;
     if (next[to] == null) {
-      next[from] = null;
       next[to] = moving;
       return next;
     }
 
-    next[from] = null;
-    if (to > from) {
-      // Shift left into the hole, then drop in at the target.
-      for (var i = from; i < to; i++) {
-        next[i] = next[i + 1];
+    final rowStart = (to ~/ kRackColumns) * kRackColumns;
+    final rowEnd = rowStart + kRackColumns - 1;
+    var gapRight = -1;
+    for (var i = to; i <= rowEnd; i++) {
+      if (next[i] == null) {
+        gapRight = i;
+        break;
       }
-      next[to] = moving;
-    } else {
-      for (var i = from; i > to; i--) {
+    }
+    var gapLeft = -1;
+    for (var i = to; i >= rowStart; i--) {
+      if (next[i] == null) {
+        gapLeft = i;
+        break;
+      }
+    }
+
+    // Whichever gap is closer; a tie goes right, which reads as "everything
+    // from here shuffles along".
+    if (gapRight >= 0 && (gapLeft < 0 || gapRight - to <= to - gapLeft)) {
+      for (var i = gapRight; i > to; i--) {
         next[i] = next[i - 1];
       }
       next[to] = moving;
+      return next;
     }
+    if (gapLeft >= 0) {
+      for (var i = gapLeft; i < to; i++) {
+        next[i] = next[i + 1];
+      }
+      next[to] = moving;
+      return next;
+    }
+
+    // The target row is full end to end, so nothing in it can step aside. The
+    // two tiles trade places: at most two move, where spilling the shove into
+    // the other row would move seventeen. A dealt hand fills the top row
+    // exactly, so this is not a corner - it is the first drop of every hand.
+    next[from] = next[to];
+    next[to] = moving;
     return next;
   }
 

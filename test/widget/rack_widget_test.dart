@@ -173,11 +173,16 @@ void main() {
     );
     final committed = result.committed;
     expect(committed, isNotNull, reason: 'the drop should have committed');
-    // Red 3 was picked up from slot 0 and put down on slot 3, so the three it
-    // passed over shuffle down one to make room - the one from the left and
-    // one from the right that a player pushes apart.
+    // Red 3 was lifted from slot 0 and put down on slot 3. Blue 9 and yellow
+    // 12 step right into the nearest gap; red 4 and red 5 do not move at all,
+    // and the hole stays where the tile was picked up, exactly as it would on
+    // a rack you can put your hand on.
     expect(committed![3], red(3).id);
-    expect(committed[0], red(4).id);
+    expect(committed[0], isNull);
+    expect(committed[1], red(4).id);
+    expect(committed[2], red(5).id);
+    expect(committed[4], blue(9).id);
+    expect(committed[5], yellow(12).id);
     expect(
       committed.whereType<int>().toSet(),
       hand.map((t) => t.id).toSet(),
