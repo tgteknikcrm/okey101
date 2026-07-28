@@ -1519,20 +1519,17 @@ class _PairsPanel extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     final game = session.state;
 
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+    // No caption and no panel behind it: the empty cells already say what the
+    // strip is for, and a tinted box around them reads as a shadow sitting on
+    // the felt.
+    return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 3),
-      decoration: BoxDecoration(
-        color: const Color(0x14FBF5E6),
-        borderRadius: BorderRadius.circular(10),
-      ),
       child: PairsBoard(
         melds: game.table,
         okey: game.okey,
         ownerColorOf: _TableArea.ownerColor,
         colorblind: colorblind,
         glyphFor: (color) => colorGlyph(l10n, color),
-        label: l10n.gamePairsShort,
       ),
     );
   }

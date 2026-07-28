@@ -616,6 +616,40 @@ void main() {
     );
   });
 
+  testWidgets('the board keeps five rows of laying space', (tester) async {
+    // Four rows and a cell size taken from the width alone. The fifth row was
+    // there but cut off at the fold, which reads as broken rather than roomy,
+    // so height has a say in the cell size now.
+    tester.view.physicalSize = const Size(844, 390);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final state = buildState(
+      indicator: indicator,
+      hands: buildHands(
+        indicator: indicator,
+        okey: okeyIdentity,
+        cores: [open101, const <Tile>[], const <Tile>[], const <Tile>[]],
+        sizes: const [22, 21, 21, 21],
+      ),
+    );
+    await pumpGame(tester, state);
+
+    final board = tester.getSize(find.byType(MeldBoard));
+    final grid = tester.getSize(
+      find.descendant(
+        of: find.byType(MeldBoard),
+        matching: find.byType(CustomPaint),
+      ).first,
+    );
+    expect(
+      grid.height,
+      lessThanOrEqualTo(board.height + 0.5),
+      reason: 'five rows have to fit without the last being clipped',
+    );
+    expect(grid.height / 5, greaterThan(14), reason: 'still readable');
+  });
+
   testWidgets('opening works on the landscape board too', (tester) async {
     tester.view.physicalSize = const Size(844, 390);
     tester.view.devicePixelRatio = 1;

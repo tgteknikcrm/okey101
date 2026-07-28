@@ -111,11 +111,17 @@ class MeldBoard extends StatelessWidget {
   final void Function(int meldId, int index)? onTapMeldTile;
   final Widget? emptyHint;
 
-  static const double _minCell = 15;
+  static const double _minCell = 13;
   static const double _maxCell = 34;
   static const double _rowGap = 4;
   static const double _halfGap = 10;
-  static const int _minRows = 3;
+
+  /// Rows the board always keeps room for.
+  static const int _rows = 5;
+
+  /// Cells are drawn a tenth smaller than the width alone would allow, which
+  /// buys back a row of laying space without touching the readable minimum.
+  static const double _cellScale = 0.9;
 
   bool _isOkey(Tile tile) =>
       !tile.isFalseJoker &&
@@ -135,9 +141,16 @@ class MeldBoard extends StatelessWidget {
         final available = halves == 2
             ? constraints.maxWidth - _halfGap
             : constraints.maxWidth;
-        final cellWidth =
-            (available / (BoardLayout.columnsPerHalf * halves))
-                .clamp(_minCell, _maxCell);
+        // Height has a say as well as width. Sizing on width alone left the
+        // cells tall enough that only four rows fitted, so the fifth was there
+        // but cut off at the fold - a board that scrolls to show half a row of
+        // empty cells looks broken rather than roomy.
+        final fromWidth =
+            available / (BoardLayout.columnsPerHalf * halves) * _cellScale;
+        final fromHeight =
+            (constraints.maxHeight / _rows - _rowGap) / TileWidget.aspectRatio;
+        final cellWidth = (fromWidth < fromHeight ? fromWidth : fromHeight)
+            .clamp(_minCell, _maxCell);
         final cell = Size(cellWidth, TileWidget.heightFor(cellWidth));
         final rowPitch = cell.height + _rowGap;
 
@@ -145,7 +158,7 @@ class MeldBoard extends StatelessWidget {
         final rowsUsed = BoardLayout.rowsUsed(placements);
         final rowsThatFit = (constraints.maxHeight / rowPitch).floor();
         final rows = [
-          _minRows,
+          _rows,
           rowsUsed,
           rowsThatFit,
         ].reduce((a, b) => a > b ? a : b);
@@ -303,7 +316,6 @@ class PairsBoard extends StatelessWidget {
     super.key,
     this.colorblind = false,
     this.glyphFor,
-    this.label,
   });
 
   final List<Meld> melds;
@@ -311,7 +323,6 @@ class PairsBoard extends StatelessWidget {
   final Color Function(int seat) ownerColorOf;
   final bool colorblind;
   final String Function(TileColor)? glyphFor;
-  final String? label;
 
   static const double _minCell = 13;
   static const double _maxCell = 28;
@@ -341,22 +352,6 @@ class PairsBoard extends StatelessWidget {
 
         return Column(
           children: [
-            if (label != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 2),
-                child: Text(
-                  label!,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 9,
-                    color: OkeyPalette.ivoryShade,
-                  ),
-                ),
-              ),
-            // A second LayoutBuilder inside the Expanded: the outer one
-            // measures the whole panel including the label above, so sizing the
-            // grid from it would overshoot by the label's height.
             Expanded(
               child: LayoutBuilder(
                 builder: (context, gridConstraints) {
