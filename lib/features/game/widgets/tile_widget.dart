@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:okey101/app/theme.dart';
 import 'package:okey101/domain/models/tile.dart';
@@ -197,44 +199,54 @@ class TilePainter extends CustomPainter {
     );
   }
 
+    /// The little brass star in the corner of the tile standing in as the okey.
+  ///
+  /// Drawn, not typed, for the same reason as the joker: U+2605 is missing
+  /// from Roboto and from some phones' fallbacks, and a tofu box in the corner
+  /// of a tile reads as damage.
   void _paintOkeyMark(Canvas canvas, Size size) {
-    final painter = TextPainter(
-      text: TextSpan(
-        text: '★',
-        style: TextStyle(
-          color: OkeyPalette.brass,
-          fontSize: size.height * 0.20,
-          height: 1,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    painter.paint(
-      canvas,
-      Offset(size.width - painter.width - size.width * 0.06, size.height * 0.04),
+    final radius = size.height * 0.075;
+    final centre = Offset(
+      size.width - radius - size.width * 0.10,
+      radius + size.height * 0.05,
     );
+
+    // Ten vertices: the star's outer points and the inner ones between them,
+    // starting at the top.
+    final path = Path();
+    for (var point = 0; point < 10; point++) {
+      final r = point.isEven ? radius : radius * 0.42;
+      final angle = -math.pi / 2 + point * math.pi / 5;
+      final vertex = centre + Offset(math.cos(angle) * r, math.sin(angle) * r);
+      if (point == 0) {
+        path.moveTo(vertex.dx, vertex.dy);
+      } else {
+        path.lineTo(vertex.dx, vertex.dy);
+      }
+    }
+    path.close();
+    canvas.drawPath(path, Paint()..color = OkeyPalette.brass);
   }
 
+    /// The false joker's mark, drawn rather than typed.
+  ///
+  /// It used to be the character U+273B. Roboto does not carry it, and neither
+  /// does every phone's fallback stack, so on those the sahte okey came out as
+  /// an empty tofu box - and a tile you cannot identify is worse than no tile
+  /// at all. Six spokes from the centre need no font.
   void _paintFalseJoker(Canvas canvas, Size size) {
-    final painter = TextPainter(
-      text: TextSpan(
-        text: '✻',
-        style: TextStyle(
-          color: OkeyPalette.tileBlack,
-          fontSize: size.height * 0.50,
-          fontWeight: FontWeight.w700,
-          height: 1,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    painter.paint(
-      canvas,
-      Offset(
-        (size.width - painter.width) / 2,
-        (size.height - painter.height) / 2,
-      ),
-    );
+    final centre = Offset(size.width / 2, size.height / 2);
+    final radius = size.height * 0.22;
+    final stroke = Paint()
+      ..color = OkeyPalette.tileBlack
+      ..strokeWidth = size.width * 0.11
+      ..strokeCap = StrokeCap.round;
+
+    for (var spoke = 0; spoke < 3; spoke++) {
+      final angle = math.pi * spoke / 3;
+      final arm = Offset(math.cos(angle) * radius, math.sin(angle) * radius);
+      canvas.drawLine(centre - arm, centre + arm, stroke);
+    }
   }
 
   void _paintGlyph(Canvas canvas, Size size) {

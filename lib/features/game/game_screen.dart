@@ -336,10 +336,14 @@ class _Board extends ConsumerWidget {
                 child: _SeatRail(
                   session: session,
                   seat: leftSeat,
-                  colorblind: settings.colorblind,
-                  // The left-hand neighbour's pile is the only one anyone may
-                  // draw from, so it is the only rail that ever accepts a tap.
+                  // The seat across throws to the seat on the left, so its pile
+                  // sits under that circle; the left seat throws to the player,
+                  // so its pile sits below that again - nearest the rack, which
+                  // is the only pile anyone may take from.
+                  piles: [acrossSeat, leftSeat],
+                  drawableSeat: leftSeat,
                   onDraw: controller.drawFromDiscard,
+                  colorblind: settings.colorblind,
                 ),
               ),
               Expanded(
@@ -348,6 +352,7 @@ class _Board extends ConsumerWidget {
                     _TopStrip(
                       session: session,
                       seat: acrossSeat,
+                      pileSeat: rightSeat,
                       colorblind: settings.colorblind,
                     ),
                     Expanded(
@@ -372,7 +377,6 @@ class _Board extends ConsumerWidget {
                               session: session,
                               colorblind: settings.colorblind,
                               onDrawPile: controller.drawFromPile,
-                              discardKey: discardKey,
                             ),
                           ),
                           SizedBox(
@@ -385,7 +389,6 @@ class _Board extends ConsumerWidget {
                         ],
                       ),
                     ),
-                    _HudBar(session: session, dense: true),
                   ],
                 ),
               ),
@@ -394,6 +397,11 @@ class _Board extends ConsumerWidget {
                 child: _SeatRail(
                   session: session,
                   seat: rightSeat,
+                  // The player throws to the seat on their right, so their own
+                  // pile lives under that circle - which is also where a tile
+                  // dragged off the rack has to be dropped to be thrown.
+                  piles: [session.humanSeat],
+                  discardKey: discardKey,
                   colorblind: settings.colorblind,
                 ),
               ),
@@ -637,40 +645,50 @@ void showScoreboard(BuildContext context, GameSession session) {
   );
 }
 
-/// One opponent at their own edge of the table: a small circle with their name,
-/// and the tiles they have thrown away sitting in front of them.
+/// One opponent at their edge of the table: a small circle with their name,
+/// and under it the pile they draw from.
 ///
-/// That is the whole rail. It used to hold all three opponents plus their
-/// panels, and the width it has given up is why the grid in the middle is wide.
+/// A discard pile belongs BETWEEN two players on a real table - the one who
+/// threw the tile and the one entitled to take it - and okey passes to the
+/// right, so the pile under a player is always the previous seat's. That makes
+/// the whole table one rotation: your throws land under the player on your
+/// right, theirs land at the top, the top seat's land on your left, and the
+/// pile you may take sits nearest you.
 class _SeatRail extends StatelessWidget {
   const _SeatRail({
     required this.session,
     required this.seat,
+    required this.piles,
     required this.colorblind,
+    this.drawableSeat,
     this.onDraw,
+    this.discardKey,
   });
 
   final GameSession session;
+
+  /// Whose circle and name this rail shows.
   final int seat;
+
+  /// Discard piles stacked under the circle, by seat, top to bottom.
+  final List<int> piles;
+
   final bool colorblind;
 
-  /// Set only for the left-hand neighbour, whose pile is the one the rules let
-  /// you draw from.
+  /// The one pile the rules let the player take from.
+  final int? drawableSeat;
   final VoidCallback? onDraw;
 
-  static const double tileWidth = 28;
+  /// Marks the player's own pile, which is where a tile dragged off the rack
+  /// has to land to be thrown.
+  final GlobalKey? discardKey;
+
+  static const double tileWidth = 26;
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final game = session.state;
-    final player = game.players[seat];
-    final top = player.topDiscard;
-    final canDraw =
-        onDraw != null &&
-        session.isHumanTurn &&
-        game.phase == TurnPhase.awaitingDraw &&
-        top != null;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
@@ -683,37 +701,91 @@ class _SeatRail extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               SeatChip(
-                player: player,
+                player: game.players[seat],
                 isCurrent: game.currentSeat == seat && !game.isHandOver,
                 thinking: session.botThinking,
               ),
-              const SizedBox(height: 4),
-              _DraggableSource(
-                source: _DrawSource.discard,
-                enabled: onDraw != null,
-                feedback: top == null
-                    ? const SizedBox.shrink()
-                    : TileWidget(width: tileWidth, tile: top),
-                child: DiscardSpot(
-                  tile: top,
-                  okey: game.okey,
-                  width: tileWidth,
-                  enabled: canDraw,
-                  // Same as the deck: refused out loud, never in silence.
-                  onTap: onDraw,
-                  // Labelled whenever the pile is drawable at all, not only when
-                  // it is drawable right now: a label that comes and goes moves
-                  // the tile under the player's thumb.
-                  label: onDraw != null ? l10n.gameTakeDiscard : null,
-                  colorblindGlyph: colorblind && top?.color != null
-                      ? colorGlyph(l10n, top!.color!)
-                      : null,
+              for (final pileSeat in piles)
+                Padding(
+                  padding: const EdgeInsets.only(top: 3),
+                  child: _Pile(
+                    session: session,
+                    seat: pileSeat,
+                    colorblind: colorblind,
+                    width: tileWidth,
+                    drawable: pileSeat == drawableSeat,
+                    onDraw: pileSeat == drawableSeat ? onDraw : null,
+                    slotKey: pileSeat == session.humanSeat ? discardKey : null,
+                    label: pileSeat == drawableSeat
+                        ? l10n.gameTakeDiscard
+                        : null,
+                  ),
                 ),
-              ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+/// One discard pile, wherever it sits on the table.
+class _Pile extends StatelessWidget {
+  const _Pile({
+    required this.session,
+    required this.seat,
+    required this.colorblind,
+    required this.width,
+    this.drawable = false,
+    this.onDraw,
+    this.slotKey,
+    this.label,
+    this.minTouchSize = 46,
+  });
+
+  final GameSession session;
+  final int seat;
+  final bool colorblind;
+  final double width;
+  final bool drawable;
+  final VoidCallback? onDraw;
+  final GlobalKey? slotKey;
+  final String? label;
+  final double minTouchSize;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final game = session.state;
+    final top = game.players[seat].topDiscard;
+    final canDraw = drawable &&
+        session.isHumanTurn &&
+        game.phase == TurnPhase.awaitingDraw &&
+        top != null;
+
+    final spot = DiscardSpot(
+      key: slotKey,
+      tile: top,
+      okey: game.okey,
+      width: width,
+      enabled: canDraw,
+      // Tappable whenever the pile is drawable at all, not only when it is
+      // drawable right now: the engine refuses and says why, where a control
+      // that does nothing just reads as a broken game.
+      onTap: drawable ? onDraw : null,
+      label: label,
+      minTouchSize: minTouchSize,
+      colorblindGlyph:
+          colorblind && top?.color != null ? colorGlyph(l10n, top!.color!) : null,
+    );
+
+    if (!drawable) return spot;
+    return _DraggableSource(
+      source: _DrawSource.discard,
+      feedback: top == null
+          ? const SizedBox.shrink()
+          : TileWidget(width: width, tile: top),
+      child: spot,
     );
   }
 }
@@ -727,17 +799,14 @@ class _DraggableSource extends StatelessWidget {
     required this.source,
     required this.feedback,
     required this.child,
-    this.enabled = true,
   });
 
   final _DrawSource source;
   final Widget feedback;
   final Widget child;
-  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
-    if (!enabled) return child;
     return Draggable<_DrawSource>(
       data: source,
       dragAnchorStrategy: pointerDragAnchorStrategy,
@@ -756,117 +825,110 @@ class _DraggableSource extends StatelessWidget {
   }
 }
 
-/// The top edge: the seat across the table, with back and the scoreboard
-/// tucked into the corners either side of it.
-class _TopStrip extends StatelessWidget {
+/// The top edge: the seat across the table, with the pile it draws from under
+/// it, and the way back tucked into the corner.
+class _TopStrip extends ConsumerWidget {
   const _TopStrip({
     required this.session,
     required this.seat,
+    required this.pileSeat,
     required this.colorblind,
   });
 
   final GameSession session;
   final int seat;
+
+  /// Whose discards sit under that circle. Always the seat before it: a pile
+  /// belongs between the player who threw the tile and the one who may take it.
+  final int pileSeat;
+
   final bool colorblind;
 
-  static const double height = 50;
-
-  /// Cap on the centred block, so it can never grow into the corners on a
-  /// small landscape phone.
-  static const double _centreMaxWidth = 240;
+  static const double height = 68;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
     final game = session.state;
-    final player = game.players[seat];
-    final top = player.topDiscard;
+    final controller = ref.read(gameControllerProvider.notifier);
+
+    final String openLine;
+    if (session.human.hasOpened) {
+      openLine = l10n.gameHudOpened;
+    } else {
+      openLine = l10n.gameHudOpenTarget(
+        game.ruleSet.openThresholdFor(game.openedCount),
+        controller.bestOpeningPoints(),
+      );
+    }
 
     return SizedBox(
       height: height,
-      child: Stack(
+      child: Row(
         children: [
-          // Centred in the Stack rather than placed in a Row: the seat opposite
-          // stays put whatever the corners happen to contain.
-          Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: _centreMaxWidth),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Flexible(
-                    child: SeatChip(
-                      player: player,
-                      isCurrent: game.currentSeat == seat && !game.isHandOver,
-                      thinking: session.botThinking,
-                      axis: Axis.horizontal,
-                    ),
-                  ),
-                  const SizedBox(width: 2),
-                  DiscardSpot(
-                    tile: top,
-                    okey: game.okey,
-                    width: 26,
-                    colorblindGlyph: colorblind && top?.color != null
-                        ? colorGlyph(l10n, top!.color!)
-                        : null,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _BackButton(session: session, dense: true),
-                // The indicator is a reading, not an action. In the corner with
-                // the other readings it costs the table nothing, and the row it
-                // frees in the deck column is what lets the draw pile be big.
-                DiscardSpot(
-                  tile: game.indicator,
-                  okey: game.okey,
-                  width: 20,
-                  label: l10n.gameIndicator,
-                  colorblindGlyph: colorblind && game.indicator.color != null
-                      ? colorGlyph(l10n, game.indicator.color!)
-                      : null,
-                ),
-              ],
-            ),
-          ),
-          Align(
-            alignment: Alignment.centerRight,
-            child: Row(
+          _BackButton(session: session, dense: true),
+          // Whose turn it is and how far off opening the rack is, in the corner
+          // as plain text. It used to be a panel of its own across the bottom,
+          // which is a row the table wanted more.
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  l10n.gameHandNumber(
-                    game.handNumber,
-                    game.ruleSet.handsPerMatch,
+                  turnLine(l10n, session),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    height: 1.2,
+                    color: session.isHumanTurn
+                        ? OkeyPalette.brass
+                        : OkeyPalette.ivoryShade,
                   ),
+                ),
+                Text(
+                  openLine,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontSize: 10,
+                    height: 1.2,
                     color: OkeyPalette.ivoryShade,
                   ),
-                ),
-                IconButton(
-                  tooltip: l10n.scoreboard,
-                  iconSize: 18,
-                  visualDensity: VisualDensity.compact,
-                  constraints: const BoxConstraints(
-                    minWidth: 32,
-                    minHeight: 32,
-                  ),
-                  icon: const Icon(Icons.list_alt),
-                  onPressed: () => showScoreboard(context, session),
                 ),
               ],
             ),
           ),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 240),
+            // Stacked, like the side rails: the pile a player draws from sits
+            // in front of them, which from this side of the table means under
+            // their circle.
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                SeatChip(
+                  player: game.players[seat],
+                  isCurrent: game.currentSeat == seat && !game.isHandOver,
+                  thinking: session.botThinking,
+                  axis: Axis.horizontal,
+                ),
+                _Pile(
+                  session: session,
+                  seat: pileSeat,
+                  colorblind: colorblind,
+                  width: 20,
+                  minTouchSize: 28,
+                ),
+              ],
+            ),
+          ),
+          // Balances the back button so the seat opposite sits centred.
+          const SizedBox(width: 32),
         ],
       ),
     );
@@ -1143,28 +1205,21 @@ class _TableArea extends ConsumerWidget {
   }
 }
 
-/// The middle of the table: the face-down draw pile and the player's own
-/// discards.
+/// The middle of the table: the face-down draw pile with the indicator under
+/// it, which is where the indicator sits on a real table.
 ///
-/// The pile you draw FROM sits in the left rail, at the neighbour it belongs
-/// to, and the indicator sits in the top corner. Only the shared deck and your
-/// own throw-aways are here, which is what leaves room for a deck you cannot
-/// miss.
+/// The discard piles are not here. Each one lives at its own edge, under the
+/// player entitled to take it.
 class _DeckColumn extends StatelessWidget {
   const _DeckColumn({
     required this.session,
     required this.colorblind,
     required this.onDrawPile,
-    required this.discardKey,
   });
 
   final GameSession session;
   final bool colorblind;
   final VoidCallback onDrawPile;
-
-  /// Marks the player's own pile, which is the target a tile dragged off the
-  /// rack has to be dropped on.
-  final GlobalKey discardKey;
 
   static const double tileWidth = 30;
 
@@ -1172,9 +1227,7 @@ class _DeckColumn extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final game = session.state;
-    final ownTop = game.players[session.humanSeat].topDiscard;
-    final canDraw =
-        session.isHumanTurn &&
+    final canDraw = session.isHumanTurn &&
         game.phase == TurnPhase.awaitingDraw &&
         game.drawPile.isNotEmpty;
 
@@ -1186,10 +1239,9 @@ class _DeckColumn extends StatelessWidget {
           // The deck must be hittable on the first try every single turn, so it
           // is never inside anything that can scroll. It used to sit in a
           // scroll view with two other slots: on any landscape phone shorter
-          // than 390 logical pixels - a 640x360 handset, or a 390 one with the
-          // browser toolbar showing - the column overflowed and the deck was
-          // clipped to a fraction of its height. Tapping it did nothing, with
-          // no scrollbar to explain why.
+          // than 390 logical pixels the column overflowed and the deck was
+          // clipped to a fraction of its height, with no scrollbar to explain
+          // why tapping it did nothing.
           _DraggableSource(
             source: _DrawSource.pile,
             feedback: const TileWidget(width: tileWidth, faceDown: true),
@@ -1197,39 +1249,30 @@ class _DeckColumn extends StatelessWidget {
               count: game.drawPile.length,
               width: tileWidth,
               enabled: canDraw,
-              // Tappable even when this is not the moment to draw. The engine
-              // refuses and says why; a control that does nothing at all just
-              // reads as a broken game, and that is exactly what got reported.
               onTap: onDrawPile,
               label: l10n.gameRemainingTiles(game.drawPile.length),
             ),
           ),
-          // The player's own pile is a reading, so it is the one that gives way
-          // when the rail is short.
+          // The indicator is a reading, so it is the one that gives way when
+          // the rail is short.
           Flexible(
             child: SingleChildScrollView(
               child: Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: _Slot(
-                  key: discardKey,
-                  label: l10n.gameDiscardPile,
+                  label: l10n.gameIndicator,
                   enabled: false,
                   compact: true,
-                  child: ownTop == null
-                      ? const _EmptySlot(width: tileWidth)
-                      : TileWidget(
-                          width: tileWidth,
-                          tile: ownTop,
-                          kind: ownTop.isFalseJoker
-                              ? TileFaceKind.falseJoker
-                              : (ownTop.color == game.okey.color &&
-                                    ownTop.number == game.okey.number)
-                              ? TileFaceKind.okey
-                              : TileFaceKind.normal,
-                          colorblindGlyph: colorblind && ownTop.color != null
-                              ? colorGlyph(l10n, ownTop.color!)
-                              : null,
-                        ),
+                  child: TileWidget(
+                    width: tileWidth,
+                    tile: game.indicator,
+                    kind: game.indicator.isFalseJoker
+                        ? TileFaceKind.falseJoker
+                        : TileFaceKind.normal,
+                    colorblindGlyph: colorblind && game.indicator.color != null
+                        ? colorGlyph(l10n, game.indicator.color!)
+                        : null,
+                  ),
                 ),
               ),
             ),
@@ -1347,13 +1390,9 @@ class _PairsPanel extends StatelessWidget {
 }
 
 class _HudBar extends ConsumerWidget {
-  const _HudBar({required this.session, this.dense = false});
+  const _HudBar({required this.session});
 
   final GameSession session;
-
-  /// Landscape folds the whole HUD onto one line: every row it spends is a row
-  /// the grid above it does not get.
-  final bool dense;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1368,67 +1407,7 @@ class _HudBar extends ConsumerWidget {
       final target = game.ruleSet.openThresholdFor(game.openedCount);
       line = l10n.gameHudOpenTarget(target, controller.bestOpeningPoints());
     }
-    final deadwood = l10n.gameHudDeadwood(controller.deadwood());
     final canFinish = controller.canFinishNow();
-
-    if (dense) {
-      return Container(
-        width: double.infinity,
-        margin: const EdgeInsets.fromLTRB(6, 0, 6, 3),
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(
-          color: const Color(0x1AFBF5E6),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        // Expanded rather than Flexible, so the three readings keep the same
-        // widths as their text changes and nothing shuffles sideways mid-turn.
-        child: Row(
-          children: [
-            Expanded(
-              flex: 3,
-              child: Text(
-                turnLine(l10n, session),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: session.isHumanTurn
-                      ? OkeyPalette.brass
-                      : OkeyPalette.ivoryShade,
-                ),
-              ),
-            ),
-            Expanded(
-              flex: 4,
-              child: Text(
-                line,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 11),
-              ),
-            ),
-            Expanded(
-              flex: 3,
-              child: Text(
-                canFinish ? '$deadwood  ${l10n.gameHudCanFinish}' : deadwood,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.right,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: canFinish ? FontWeight.bold : FontWeight.normal,
-                  color: canFinish
-                      ? OkeyPalette.success
-                      : OkeyPalette.ivoryShade,
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
 
     return Container(
       width: double.infinity,
@@ -1450,7 +1429,7 @@ class _HudBar extends ConsumerWidget {
             children: [
               Flexible(
                 child: Text(
-                  deadwood,
+                  l10n.gameHudDeadwood(controller.deadwood()),
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontSize: 11,

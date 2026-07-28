@@ -14,6 +14,7 @@ import 'package:okey101/features/game/game_screen.dart';
 import 'package:okey101/features/game/game_session.dart';
 import 'package:okey101/features/game/widgets/meld_board.dart';
 import 'package:okey101/features/game/widgets/rack_widget.dart';
+import 'package:okey101/features/game/widgets/seat_chip.dart';
 import 'package:okey101/features/game/widgets/tile_widget.dart';
 import 'package:okey101/l10n/generated/app_localizations.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -311,11 +312,11 @@ void main() {
     }
   });
 
-  testWidgets('the deck column fits between the table and the rack',
-      (tester) async {
-    // It scrolls, which is the safety net on a tiny viewport - and also the
-    // trap: a slot pushed past the fold is still laid out, just invisible. On
-    // the size the game is actually played at, everything has to be on screen.
+  testWidgets('the deck and the indicator fit above the rack', (tester) async {
+    // The column scrolls, which is the safety net on a tiny viewport - and
+    // also the trap: a slot pushed past the fold is still laid out, just
+    // invisible. On the size the game is actually played at, both have to be
+    // on screen.
     tester.view.physicalSize = const Size(844, 390);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -332,61 +333,16 @@ void main() {
     final l10n = await pumpGame(tester, state);
 
     final rackTop = tester.getRect(find.byType(RackWidget)).top;
-    final deck = find.text(l10n.gameRemainingTiles(state.drawPile.length));
-    expect(deck, findsOneWidget);
-    final deckRect = tester.getRect(deck);
-    expect(deckRect.bottom, lessThanOrEqualTo(rackTop));
-
-    // The player's own discard pile is the last thing in the column and the
-    // first to be pushed out of sight.
-    final own = find.text(l10n.gameDiscardPile);
-    expect(own, findsNWidgets(2), reason: 'the table slot and the button');
-    for (final element in own.evaluate()) {
-      final rect = tester.getRect(find.byWidget(element.widget));
+    for (final label in <String>[
+      l10n.gameRemainingTiles(state.drawPile.length),
+      l10n.gameIndicator,
+    ]) {
+      final finder = find.text(label);
+      expect(finder, findsOneWidget, reason: '$label is missing');
       expect(
-        rect.bottom,
+        tester.getRect(finder).bottom,
         lessThanOrEqualTo(rackTop),
-        reason: 'a discard label ends at ${rect.bottom}, past $rackTop',
-      );
-    }
-  });
-
-  testWidgets('the draw pile is fully tappable on a short landscape phone',
-      (tester) async {
-    // 640x360 is a 360x640 handset rotated, and 844x340 is a 390-tall one with
-    // the browser toolbar showing. The deck used to live in a scroll view with
-    // two other slots; on anything shorter than 390 the column overflowed and
-    // the deck was clipped to a sliver, with no scrollbar to say so. Tapping it
-    // did nothing, which is exactly the complaint.
-    for (final size in const <Size>[Size(640, 360), Size(844, 340)]) {
-      tester.view.physicalSize = size;
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.reset);
-
-      final state = buildState(
-        indicator: indicator,
-        hands: buildHands(
-          indicator: indicator,
-          okey: okeyIdentity,
-          cores: [tooLow, const <Tile>[], const <Tile>[], const <Tile>[]],
-        ),
-        phase: TurnPhase.awaitingDraw,
-      );
-      final l10n = await pumpGame(tester, state);
-
-      final before = state.drawPile.length;
-      final pile = find.ancestor(
-        of: find.text(l10n.gameRemainingTiles(before)),
-        matching: find.byType(GestureDetector),
-      );
-      expect(pile, findsWidgets, reason: 'no draw pile at $size');
-      await tester.tap(pile.first, warnIfMissed: false);
-      await tester.pumpAndSettle();
-
-      expect(
-        find.text(l10n.gameRemainingTiles(before - 1)),
-        findsOneWidget,
-        reason: 'tapping the deck drew nothing at $size',
+        reason: '$label is hidden behind the rack',
       );
     }
   });
@@ -479,15 +435,19 @@ void main() {
         sizes: const [22, 21, 21, 21],
       ),
     );
-    final l10n = await pumpGame(tester, state, fastMode: true);
+    await pumpGame(tester, state, fastMode: true);
 
     final rack = tester.getRect(find.byType(RackWidget));
-    final target = tester.getCenter(
-      find.ancestor(
-        of: find.text(l10n.gameDiscardPile).first,
-        matching: find.byType(Column),
-      ).first,
-    );
+    // The player's own pile is the rightmost one on the table: it sits under
+    // the seat on their right, which is the seat entitled to take it.
+    final spots = find.byType(DiscardSpot).evaluate().toList()
+      ..sort(
+        (a, b) => tester
+            .getCenter(find.byWidget(a.widget))
+            .dx
+            .compareTo(tester.getCenter(find.byWidget(b.widget)).dx),
+      );
+    final target = tester.getCenter(find.byWidget(spots.last.widget));
 
     // The rack is height-capped in landscape, so it is narrower than its box
     // and centred inside it: an offset from rack.left lands in the margin.

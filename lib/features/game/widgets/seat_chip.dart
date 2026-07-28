@@ -121,6 +121,7 @@ class DiscardSpot extends StatelessWidget {
     this.onTap,
     this.label,
     this.colorblindGlyph,
+    this.minTouchSize = 46,
   });
 
   final Tile? tile;
@@ -131,6 +132,10 @@ class DiscardSpot extends StatelessWidget {
   final String? label;
   final String? colorblindGlyph;
 
+  /// Floor on the tappable box. Generous by default, because a target you
+  /// cannot feel has to be; a pile nobody may touch can be smaller.
+  final double minTouchSize;
+
   @override
   Widget build(BuildContext context) {
     final value = tile;
@@ -138,9 +143,8 @@ class DiscardSpot extends StatelessWidget {
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: Container(
-        // A touch target you cannot feel has to be generous; the tile itself is
-        // only as wide as [width].
-        constraints: const BoxConstraints(minWidth: 46, minHeight: 46),
+        constraints:
+            BoxConstraints(minWidth: minTouchSize, minHeight: minTouchSize),
         padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(9),
