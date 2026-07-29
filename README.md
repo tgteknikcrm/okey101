@@ -5,6 +5,16 @@ against three rule-following bots. No app store, no backend, no accounts.
 
 **Live:** https://tgteknikcrm.github.io/okey101/
 
+## Documentation
+
+| File | For |
+|---|---|
+| [`CLAUDE.md`](CLAUDE.md) | The contract: hard rules, commands, layout constants, and the traps that cost a round trip each |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Layer map, engine, solver, bots, board geometry, testing |
+| [`docs/OTURUM.md`](docs/OTURUM.md) | Session log in Turkish: what was asked, what was built, **what was got wrong and how** |
+
+Read `CLAUDE.md` before touching layout or gestures.
+
 ## Running locally
 
 ```bash
@@ -24,13 +34,19 @@ lib/
 ├── features/   UI, feature-first
 └── l10n/       ARB files (tr default, en)
 tool/
-├── generate_icons.dart   dependency-free PWA icon generator
-└── simulate.dart         bulk game simulation
+├── generate_icons.dart      dependency-free PWA icon generator
+├── simulate.dart            bulk game simulation
+├── pairs_probe.dart         how often bots take the pairs road
+├── meld_length_probe.dart   how long table melds get
+├── bench_web.dart           solver timing, compiled to JS
+└── publish.sh               analyse, test, build, push to gh-pages
 ```
 
-`lib/domain/` is pure Dart: no Flutter, no `dart:ui`, no `dart:io`, no
-`dart:math`, no clock, no ambient randomness. This is enforced by
-`test/purity_test.dart`, not by convention.
+`lib/domain/` is pure Dart: no Flutter, no `dart:ui`, no `dart:io`, no maths
+library, no clock, no ambient randomness. This is enforced by
+`test/purity_test.dart`, not by convention. The test greps for banned tokens
+**including inside comments**, so naming the maths library in a doc comment
+fails the build.
 
 `GameEngine.apply(GameState, GameAction)` is a pure function. All randomness
 flows through an injected xorshift32 `RandomSource`, so every game is
@@ -45,6 +61,8 @@ reproducible from `(seed, canonicalActions)`.
 | `flutter test --coverage` | Coverage into `coverage/lcov.info` |
 | `dart run tool/generate_icons.dart` | Regenerate PWA icons |
 | `dart run tool/simulate.dart --games 10000` | Bulk simulation |
+| `dart run tool/pairs_probe.dart --games 120` | Pairs-road frequency |
+| `dart run tool/meld_length_probe.dart --games 150` | Meld length distribution |
 | `flutter build web --release --base-href /okey101/` | Production bundle |
 
 ## Platform
@@ -65,8 +83,14 @@ only. To publish a change:
 bash tool/publish.sh
 ```
 
-That analyses, tests, builds with the right base href, force-pushes the output
-to `gh-pages`, and asks Pages to rebuild.
+That analyses, tests, builds with the right base href and a build stamp,
+force-pushes the output to `gh-pages`, and asks Pages to rebuild. Run it from
+**Git Bash**: it sets `MSYS_NO_PATHCONV=1` itself, without which MSYS rewrites
+`--base-href /okey101/` into a Windows path and the build fails.
+
+The build stamp shows on the menu, under the debug link. It is the short SHA the
+bundle was built from, so "I still see the old bug" and "the fix did not work"
+can be told apart.
 
 ### Switching to the Actions pipeline
 
